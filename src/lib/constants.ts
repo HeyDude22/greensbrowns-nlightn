@@ -105,6 +105,8 @@ export const PICKUP_STATUS_LABELS: Record<PickupStatus, string> = {
   picked_up: "Picked Up",
   in_transit: "In Transit",
   delivered: "Delivered",
+  received: "Received",
+  rejected: "Rejected",
   processed: "Processed",
   cancelled: "Cancelled",
 };
@@ -116,7 +118,9 @@ export const PICKUP_STATUS_COLORS: Record<PickupStatus, string> = {
   picked_up: "bg-orange-100 text-orange-800",
   in_transit: "bg-purple-100 text-purple-800",
   delivered: "bg-green-100 text-green-800",
-  processed: "bg-emerald-100 text-emerald-800",
+  received: "bg-emerald-100 text-emerald-800",
+  rejected: "bg-red-100 text-red-800",
+  processed: "bg-emerald-200 text-emerald-900",
   cancelled: "bg-red-100 text-red-800",
 };
 

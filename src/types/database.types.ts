@@ -446,8 +446,10 @@ export type Database = {
         Row: {
           actual_weight_kg: number | null
           created_at: string
+          delivered_at: string | null
           estimated_weight_kg: number | null
           farmer_id: string | null
+          farmer_responded_at: string | null
           id: string
           loading_helper_required: boolean
           notes: string | null
@@ -457,6 +459,7 @@ export type Database = {
           pickup_number: string | null
           prepaid_package_id: string | null
           recurrence: Database["public"]["Enums"]["recurrence_type"]
+          rejection_reason: string | null
           requested_by: string
           scheduled_date: string
           scheduled_slot: string | null
@@ -468,8 +471,10 @@ export type Database = {
         Insert: {
           actual_weight_kg?: number | null
           created_at?: string
+          delivered_at?: string | null
           estimated_weight_kg?: number | null
           farmer_id?: string | null
+          farmer_responded_at?: string | null
           id?: string
           loading_helper_required?: boolean
           notes?: string | null
@@ -479,6 +484,7 @@ export type Database = {
           pickup_number?: string | null
           prepaid_package_id?: string | null
           recurrence?: Database["public"]["Enums"]["recurrence_type"]
+          rejection_reason?: string | null
           requested_by: string
           scheduled_date: string
           scheduled_slot?: string | null
@@ -490,8 +496,10 @@ export type Database = {
         Update: {
           actual_weight_kg?: number | null
           created_at?: string
+          delivered_at?: string | null
           estimated_weight_kg?: number | null
           farmer_id?: string | null
+          farmer_responded_at?: string | null
           id?: string
           loading_helper_required?: boolean
           notes?: string | null
@@ -501,6 +509,7 @@ export type Database = {
           pickup_number?: string | null
           prepaid_package_id?: string | null
           recurrence?: Database["public"]["Enums"]["recurrence_type"]
+          rejection_reason?: string | null
           requested_by?: string
           scheduled_date?: string
           scheduled_slot?: string | null
@@ -1026,6 +1035,8 @@ export type Database = {
         | "picked_up"
         | "in_transit"
         | "delivered"
+        | "received"
+        | "rejected"
         | "processed"
         | "cancelled"
       prepaid_package_status: "pending" | "approved" | "rejected" | "expired"
@@ -1200,6 +1211,8 @@ export const Constants = {
         "picked_up",
         "in_transit",
         "delivered",
+        "received",
+        "rejected",
         "processed",
         "cancelled",
       ],

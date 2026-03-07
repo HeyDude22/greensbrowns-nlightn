@@ -11,8 +11,12 @@ export type PickupStatus =
   | "picked_up"
   | "in_transit"
   | "delivered"
+  | "received"
+  | "rejected"
   | "processed"
   | "cancelled";
+
+export type RejectionReason = "mixed_waste" | "capacity_full" | "other";
 
 export type RecurrenceType = "one_time" | "weekly" | "biweekly" | "monthly";
 

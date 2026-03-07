@@ -33,9 +33,9 @@ export async function updateSession(request: NextRequest) {
 
   // Public routes — allow without auth
   const publicRoutes = ["/", "/login", "/register", "/verify-otp", "/auth/callback"];
-  const isPublicRoute = publicRoutes.some(
-    (route) => pathname === route || pathname.startsWith("/auth/")
-  );
+  const isPublicRoute =
+    publicRoutes.some((route) => pathname === route || pathname.startsWith("/auth/")) ||
+    pathname.startsWith("/api/");
 
   // Not logged in and trying to access protected route
   if (!user && !isPublicRoute) {
