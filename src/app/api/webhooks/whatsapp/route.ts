@@ -17,8 +17,11 @@ function verifyTwilioSignature(req: NextRequest, body: string): boolean {
 export async function POST(req: NextRequest) {
   const bodyText = await req.text();
 
-  // Verify Twilio signature in production
-  if (process.env.NODE_ENV === "production") {
+  // Verify Twilio signature in production (skip for internal test calls)
+  const internalSecret = req.headers.get("x-internal-secret");
+  const isInternalCall = internalSecret === process.env.CRON_SECRET;
+
+  if (process.env.NODE_ENV === "production" && !isInternalCall) {
     if (!verifyTwilioSignature(req, bodyText)) {
       return new NextResponse("Unauthorized", { status: 403 });
     }

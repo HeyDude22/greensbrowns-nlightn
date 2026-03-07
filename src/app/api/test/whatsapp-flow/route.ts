@@ -32,7 +32,10 @@ async function simulateWebhook(
 
   const res = await fetch(`${baseUrl}/api/webhooks/whatsapp`, {
     method: "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    headers: {
+      "Content-Type": "application/x-www-form-urlencoded",
+      "x-internal-secret": process.env.CRON_SECRET || "",
+    },
     body: params.toString(),
   });
 
