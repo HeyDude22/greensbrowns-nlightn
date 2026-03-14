@@ -231,6 +231,13 @@ async function createJobFromSuggestion(
     })),
   );
 
+  // Send WhatsApp notifications to collector(s)
+  fetch("/api/notify/job-assigned", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ pickupIds }),
+  }).catch(console.error);
+
   return { jobNumber };
 }
 

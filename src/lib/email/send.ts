@@ -1,14 +1,6 @@
-import nodemailer from "nodemailer";
+import { Resend } from "resend";
 
-const transporter = nodemailer.createTransport({
-  host: process.env.SMTP_HOST,
-  port: Number(process.env.SMTP_PORT || 587),
-  secure: false,
-  auth: {
-    user: process.env.SMTP_USER,
-    pass: process.env.SMTP_APP_PASSWORD,
-  },
-});
+const resend = new Resend(process.env.RESEND_API_KEY);
 
 interface EmailOptions {
   to: string;
@@ -18,12 +10,18 @@ interface EmailOptions {
 
 export async function sendEmail({ to, subject, html }: EmailOptions): Promise<boolean> {
   try {
-    await transporter.sendMail({
-      from: `"GreensBrowns" <${process.env.SMTP_USER}>`,
+    const { error } = await resend.emails.send({
+      from: "GreensBrowns <info@greensbrowns.com>",
       to,
       subject,
       html,
     });
+
+    if (error) {
+      console.error(`[Email] Resend error for ${to}:`, error);
+      return false;
+    }
+
     console.log(`[Email] Sent to ${to}: ${subject}`);
     return true;
   } catch (error) {

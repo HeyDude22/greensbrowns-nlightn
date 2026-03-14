@@ -1,74 +1,99 @@
 import { NextRequest, NextResponse } from "next/server";
-import twilio from "twilio";
 import { handleIncomingMessage } from "@/lib/whatsapp/handler";
+import { sendWhatsAppMessage } from "@/lib/whatsapp/client";
 
-const authToken = process.env.TWILIO_AUTH_TOKEN!;
+// Meta webhook verification (GET)
+export async function GET(req: NextRequest) {
+  const searchParams = req.nextUrl.searchParams;
+  const mode = searchParams.get("hub.mode");
+  const token = searchParams.get("hub.verify_token");
+  const challenge = searchParams.get("hub.challenge");
+  const expected = (process.env.META_WEBHOOK_VERIFY_TOKEN || "").trim();
 
-function verifyTwilioSignature(req: NextRequest, body: string): boolean {
-  const signature = req.headers.get("x-twilio-signature");
-  if (!signature) return false;
+  console.log("[Webhook] Verify attempt:", { mode, tokenLen: token?.length, expectedLen: expected.length, match: token === expected });
 
-  const url = `${process.env.NEXT_PUBLIC_APP_URL}/api/webhooks/whatsapp`;
-  const params = Object.fromEntries(new URLSearchParams(body));
+  if (mode === "subscribe" && token === expected) {
+    console.log("[Webhook] Meta verification successful");
+    return new NextResponse(challenge, { status: 200 });
+  }
 
-  return twilio.validateRequest(authToken, signature, url, params);
+  return new NextResponse("Forbidden", { status: 403 });
 }
 
+// Meta incoming messages (POST)
 export async function POST(req: NextRequest) {
-  const bodyText = await req.text();
+  const body = await req.json();
 
-  // Verify Twilio signature in production (skip for internal test calls)
+  // Internal test calls bypass signature verification
   const internalSecret = req.headers.get("x-internal-secret");
   const isInternalCall = internalSecret === process.env.CRON_SECRET;
 
-  if (process.env.NODE_ENV === "production" && !isInternalCall) {
-    if (!verifyTwilioSignature(req, bodyText)) {
-      return new NextResponse("Unauthorized", { status: 403 });
-    }
+  // Extract message from Meta webhook payload
+  const entry = body.entry?.[0];
+  const changes = entry?.changes?.[0];
+  const value = changes?.value;
+
+  // Handle status updates (delivered, read, etc.) — just acknowledge
+  if (value?.statuses) {
+    return NextResponse.json({ ok: true });
   }
 
-  const params = Object.fromEntries(new URLSearchParams(bodyText));
+  const message = value?.messages?.[0];
+  if (!message) {
+    return NextResponse.json({ ok: true });
+  }
+
+  const from = message.from; // e.g., "919060899764"
+  const messageType = message.type;
+
+  // Extract text body, button reply, or media
+  let textBody = "";
+  let buttonPayload = "";
+  let mediaId = "";
+  let mediaType = "";
+
+  if (messageType === "text") {
+    textBody = message.text?.body || "";
+  } else if (messageType === "button") {
+    buttonPayload = message.button?.payload || "";
+    textBody = message.button?.text || "";
+  } else if (messageType === "interactive") {
+    const interactive = message.interactive;
+    if (interactive?.type === "button_reply") {
+      buttonPayload = interactive.button_reply?.id || "";
+      textBody = interactive.button_reply?.title || "";
+    } else if (interactive?.type === "list_reply") {
+      buttonPayload = interactive.list_reply?.id || "";
+      textBody = interactive.list_reply?.title || "";
+    }
+  } else if (messageType === "image" || messageType === "document") {
+    mediaId = message[messageType]?.id || "";
+    mediaType = message[messageType]?.mime_type || "";
+    textBody = message[messageType]?.caption || "";
+  }
 
   try {
     const reply = await handleIncomingMessage({
-      From: params.From || "",
-      Body: params.Body || "",
-      NumMedia: params.NumMedia || "0",
-      MediaUrl0: params.MediaUrl0,
-      MediaContentType0: params.MediaContentType0,
-      ButtonPayload: params.ButtonPayload,
+      From: from,
+      Body: textBody || buttonPayload,
+      NumMedia: mediaId ? "1" : "0",
+      MediaId: mediaId || undefined,
+      MediaContentType0: mediaType || undefined,
+      ButtonPayload: buttonPayload || undefined,
     });
 
-    // Return TwiML response
-    const twiml = `<?xml version="1.0" encoding="UTF-8"?>
-<Response>
-  <Message>${escapeXml(reply)}</Message>
-</Response>`;
+    // Send reply via Meta API (not TwiML)
+    await sendWhatsAppMessage(from, reply);
 
-    return new NextResponse(twiml, {
-      headers: { "Content-Type": "text/xml" },
-    });
+    return NextResponse.json({ ok: true });
   } catch (error) {
     console.error("[WhatsApp Webhook] Error:", error);
     const userMessage =
       process.env.NODE_ENV === "production"
         ? "Something went wrong. Please try again."
         : `Error: ${error instanceof Error ? error.message : String(error)}`;
-    return new NextResponse(
-      `<?xml version="1.0" encoding="UTF-8"?>
-<Response>
-  <Message>${escapeXml(userMessage)}</Message>
-</Response>`,
-      { headers: { "Content-Type": "text/xml" } }
-    );
-  }
-}
 
-function escapeXml(str: string): string {
-  return str
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&apos;");
+    await sendWhatsAppMessage(from, userMessage);
+    return NextResponse.json({ ok: true });
+  }
 }

@@ -1,53 +1,45 @@
-import twilio from "twilio";
+const phoneNumberId = process.env.META_PHONE_NUMBER_ID!;
+const accessToken = process.env.META_WHATSAPP_TOKEN!;
+const graphUrl = `https://graph.facebook.com/v21.0/${phoneNumberId}/messages`;
 
-const accountSid = process.env.TWILIO_ACCOUNT_SID!;
-const authToken = process.env.TWILIO_AUTH_TOKEN!;
-const whatsappNumber = process.env.TWILIO_WHATSAPP_NUMBER!;
-
-const client = twilio(accountSid, authToken);
-
-function formatWhatsApp(phone: string): string {
+function formatPhone(phone: string): string {
   const cleaned = phone.replace(/\D/g, "");
-  const withCountry = cleaned.startsWith("91") ? cleaned : `91${cleaned}`;
-  return `whatsapp:+${withCountry}`;
+  return cleaned.startsWith("91") ? cleaned : `91${cleaned}`;
+}
+
+async function metaSend(body: Record<string, unknown>): Promise<string | null> {
+  try {
+    const res = await fetch(graphUrl, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ messaging_product: "whatsapp", ...body }),
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      console.error("[WhatsApp] Meta API error:", JSON.stringify(data));
+      return null;
+    }
+    const messageId = data.messages?.[0]?.id ?? null;
+    console.log(`[WhatsApp] Sent: ${messageId}`);
+    return messageId;
+  } catch (error) {
+    console.error("[WhatsApp] Send failed:", error);
+    return null;
+  }
 }
 
 export async function sendWhatsAppMessage(
   to: string,
   body: string
 ): Promise<string | null> {
-  try {
-    const message = await client.messages.create({
-      from: `whatsapp:${whatsappNumber}`,
-      to: formatWhatsApp(to),
-      body,
-    });
-    console.log(`[WhatsApp] Sent to ${to}: ${message.sid}`);
-    return message.sid;
-  } catch (error) {
-    console.error(`[WhatsApp] Failed to send to ${to}:`, error);
-    return null;
-  }
-}
-
-export async function sendWhatsAppTemplate(
-  to: string,
-  contentSid: string,
-  contentVariables: Record<string, string>
-): Promise<string | null> {
-  try {
-    const message = await client.messages.create({
-      from: `whatsapp:${whatsappNumber}`,
-      to: formatWhatsApp(to),
-      contentSid,
-      contentVariables: JSON.stringify(contentVariables),
-    });
-    console.log(`[WhatsApp] Template sent to ${to}: ${message.sid}`);
-    return message.sid;
-  } catch (error) {
-    console.error(`[WhatsApp] Template failed for ${to}:`, error);
-    return null;
-  }
+  return metaSend({
+    to: formatPhone(to),
+    type: "text",
+    text: { body },
+  });
 }
 
 export async function sendWhatsAppButtons(
@@ -55,23 +47,46 @@ export async function sendWhatsAppButtons(
   body: string,
   buttons: { id: string; title: string }[]
 ): Promise<string | null> {
-  try {
-    const message = await client.messages.create({
-      from: `whatsapp:${whatsappNumber}`,
-      to: formatWhatsApp(to),
-      body,
-      persistentAction: buttons.map((b) => `id:${b.id},title:${b.title}`),
-    });
-    console.log(`[WhatsApp] Buttons sent to ${to}: ${message.sid}`);
-    return message.sid;
-  } catch (error) {
-    console.error(`[WhatsApp] Buttons failed for ${to}:`, error);
-    return null;
-  }
+  return metaSend({
+    to: formatPhone(to),
+    type: "interactive",
+    interactive: {
+      type: "button",
+      body: { text: body },
+      action: {
+        buttons: buttons.slice(0, 3).map((b) => ({
+          type: "reply",
+          reply: { id: b.id, title: b.title },
+        })),
+      },
+    },
+  });
 }
 
-export function getMediaUrl(mediaSid: string, messageSid: string): string {
-  return `https://api.twilio.com/2010-04-01/Accounts/${accountSid}/Messages/${messageSid}/Media/${mediaSid}`;
+export async function sendWhatsAppImage(
+  to: string,
+  imageUrl: string,
+  caption?: string
+): Promise<string | null> {
+  return metaSend({
+    to: formatPhone(to),
+    type: "image",
+    image: { link: imageUrl, ...(caption ? { caption } : {}) },
+  });
 }
 
-export { client as twilioClient };
+export async function downloadMedia(mediaId: string): Promise<Buffer> {
+  // Step 1: Get media URL
+  const metaRes = await fetch(`https://graph.facebook.com/v21.0/${mediaId}`, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  const metaData = await metaRes.json();
+  const mediaUrl = metaData.url;
+
+  // Step 2: Download the actual media
+  const mediaRes = await fetch(mediaUrl, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  if (!mediaRes.ok) throw new Error(`Media download failed: ${mediaRes.status}`);
+  return Buffer.from(await mediaRes.arrayBuffer());
+}

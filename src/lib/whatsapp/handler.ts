@@ -1,5 +1,5 @@
 import { createAdminClient } from "@/lib/supabase/admin";
-import { sendWhatsAppMessage } from "./client";
+import { sendWhatsAppMessage, downloadMedia } from "./client";
 import {
   PHOTO_PROMPT,
   FARMER_CONFIRM_DELIVERY,
@@ -10,16 +10,17 @@ import { getETA } from "@/lib/google/distance-matrix";
 
 const supabase = createAdminClient();
 
-interface TwilioWebhookBody {
+interface WebhookMessage {
   From: string;
   Body: string;
   NumMedia: string;
-  MediaUrl0?: string;
+  MediaId?: string;
   MediaContentType0?: string;
   ButtonPayload?: string;
 }
 
 function extractPhone(from: string): string {
+  // Meta sends plain number like "919060899764"
   return from.replace("whatsapp:", "").replace("+", "");
 }
 
@@ -103,7 +104,7 @@ async function findDeliveredPickupForFarmer(farmerId: string) {
 
 async function handleCollectorPhoto(
   profileId: string,
-  mediaUrl: string,
+  mediaId: string,
   currentStatus: "assigned" | "picked_up"
 ) {
   const newStatus = currentStatus === "assigned" ? "picked_up" : "delivered";
@@ -114,24 +115,12 @@ async function handleCollectorPhoto(
   const pickup = await findPickupForCollectorByStatus(profileId, currentStatus);
   if (!pickup) return "No pickup found awaiting your photo.";
 
-  // Download photo from Twilio and upload to Supabase storage
+  // Download photo from Meta Cloud API and upload to Supabase storage
   let photoBuffer: Buffer;
   try {
-    const isTwilioUrl = mediaUrl.includes("api.twilio.com");
-    const fetchHeaders: Record<string, string> = isTwilioUrl
-      ? {
-          Authorization: `Basic ${Buffer.from(
-            `${process.env.TWILIO_ACCOUNT_SID}:${process.env.TWILIO_AUTH_TOKEN}`
-          ).toString("base64")}`,
-        }
-      : {};
-
-    const photoRes = await fetch(mediaUrl, { headers: fetchHeaders });
-    if (!photoRes.ok) throw new Error(`HTTP ${photoRes.status}`);
-    photoBuffer = Buffer.from(await photoRes.arrayBuffer());
+    photoBuffer = await downloadMedia(mediaId);
   } catch (err) {
     console.warn(`[WhatsApp] Photo download failed (${err}), using placeholder`);
-    // 1x1 PNG placeholder — in production Twilio URLs always work
     photoBuffer = Buffer.from(
       "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==",
       "base64"
@@ -244,23 +233,36 @@ async function notifyFarmerConfirmDelivery(farmerId: string) {
     .single();
 
   if (!profile?.phone) return;
-  await sendWhatsAppMessage(profile.phone, FARMER_CONFIRM_DELIVERY);
+
+  // Use interactive buttons — Meta allows max 3 buttons per message
+  const { sendWhatsAppButtons } = await import("./client");
+  await sendWhatsAppButtons(
+    profile.phone,
+    "Waste has been delivered to your farm. Please confirm:",
+    [
+      { id: "received", title: "Received" },
+      { id: "reject_mixed", title: "Reject-Mixed Waste" },
+      { id: "reject_other", title: "Reject-Other" },
+    ]
+  );
 }
 
 async function handleFarmerResponse(profileId: string, body: string) {
   const pickup = await findDeliveredPickupForFarmer(profileId);
   if (!pickup) return "No pending delivery found.";
 
-  const choice = body.trim();
+  const choice = body.trim().toLowerCase();
 
   type RejectionReason = "mixed_waste" | "capacity_full" | "other";
   const rejectionMap: Record<string, RejectionReason> = {
     "2": "mixed_waste",
     "3": "capacity_full",
     "4": "other",
+    "reject_mixed": "mixed_waste",
+    "reject_other": "other",
   };
 
-  if (choice === "1") {
+  if (choice === "1" || choice === "received") {
     await supabase
       .from("pickups")
       .update({
@@ -306,7 +308,7 @@ async function handleFarmerResponse(profileId: string, body: string) {
 const pendingAction = new Map<string, "assigned" | "picked_up">();
 
 export async function handleIncomingMessage(
-  body: TwilioWebhookBody
+  body: WebhookMessage
 ): Promise<string> {
   const phone = extractPhone(body.From);
   const profile = await findProfileByPhone(phone);
@@ -338,23 +340,23 @@ export async function handleIncomingMessage(
     }
 
     // Photo received — complete the pending action
-    if (hasMedia && body.MediaUrl0) {
+    if (hasMedia && body.MediaId) {
       const action = pendingAction.get(phone);
       if (!action) {
         // No pending action — try to infer from pickup status
         const assigned = await findPickupForCollectorByStatus(profile.id, "assigned");
         if (assigned) {
-          return handleCollectorPhoto(profile.id, body.MediaUrl0, "assigned");
+          return handleCollectorPhoto(profile.id, body.MediaId, "assigned");
         }
         const pickedUp = await findPickupForCollectorByStatus(profile.id, "picked_up");
         if (pickedUp) {
-          return handleCollectorPhoto(profile.id, body.MediaUrl0, "picked_up");
+          return handleCollectorPhoto(profile.id, body.MediaId, "picked_up");
         }
         return "No pickup found awaiting your photo.";
       }
 
       pendingAction.delete(phone);
-      return handleCollectorPhoto(profile.id, body.MediaUrl0, action);
+      return handleCollectorPhoto(profile.id, body.MediaId, action);
     }
 
     return "Reply 'Picked Up' when at the pickup location, or 'Delivered' when at the farm.";
@@ -362,11 +364,13 @@ export async function handleIncomingMessage(
 
   // Handle farmer flows
   if (profile.role === "farmer") {
-    if (["1", "2", "3", "4"].includes(messageBody)) {
-      return handleFarmerResponse(profile.id, messageBody);
+    const farmerChoices = ["1", "2", "3", "4", "received", "reject_mixed", "reject_other"];
+    const input = buttonPayload || messageBody;
+    if (farmerChoices.includes(input)) {
+      return handleFarmerResponse(profile.id, input);
     }
 
-    return "Reply with 1 (Received), 2 (Mixed Waste), 3 (Capacity Full), or 4 (Other) to confirm a delivery.";
+    return "Please tap a button or reply with 1 (Received), 2 (Mixed Waste), 3 (Capacity Full), or 4 (Other) to confirm a delivery.";
   }
 
   return "Your role does not support WhatsApp interactions yet.";
