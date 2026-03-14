@@ -150,3 +150,8 @@
     @apply text-sm;
   }
 }
+
+/* Fix Leaflet map z-index so popovers render above it */
+.leaflet-container {
+  z-index: 0 !important;
+}
