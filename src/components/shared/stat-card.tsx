@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import type { LucideIcon } from "lucide-react";
 
 interface StatCardProps {
@@ -12,18 +12,20 @@ interface StatCardProps {
 
 export function StatCard({ title, value, icon: Icon, description, href }: StatCardProps) {
   const card = (
-    <Card className={href ? "hover:shadow-md transition-shadow" : undefined}>
-      <CardHeader className="flex flex-row items-center justify-between pb-2">
-        <CardTitle className="text-sm font-medium text-muted-foreground">
-          {title}
-        </CardTitle>
-        <Icon className="h-4 w-4 text-muted-foreground" />
-      </CardHeader>
-      <CardContent>
-        <div className="text-2xl font-bold">{value}</div>
-        {description && (
-          <p className="text-xs text-muted-foreground">{description}</p>
-        )}
+    <Card className={href ? "group hover:shadow-md hover:border-forest/30 transition-all duration-200" : undefined}>
+      <CardContent className="p-5">
+        <div className="flex items-start justify-between">
+          <div>
+            <p className="text-sm font-medium text-muted-foreground">{title}</p>
+            <p className="text-3xl font-bold tracking-tight mt-1">{value}</p>
+            {description && (
+              <p className="text-xs text-muted-foreground mt-1">{description}</p>
+            )}
+          </div>
+          <div className="rounded-lg bg-forest/8 p-2.5 group-hover:bg-forest/15 transition-colors">
+            <Icon className="h-5 w-5 text-forest" />
+          </div>
+        </div>
       </CardContent>
     </Card>
   );

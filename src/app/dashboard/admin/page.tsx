@@ -234,12 +234,12 @@ export default function AdminDashboard() {
     alerts.awaitingProcessing > 0;
 
   return (
-    <div className="space-y-6">
-      <h1 className="text-2xl font-bold">Admin Dashboard</h1>
+    <div className="space-y-8">
+      <h1 className="text-2xl font-bold tracking-tight">Dashboard</h1>
 
       {/* Action Required */}
       <section className="space-y-3">
-        <h2 className="text-sm font-medium text-muted-foreground uppercase tracking-wide">
+        <h2 className="text-xs font-semibold text-muted-foreground uppercase tracking-widest">
           Action Required
         </h2>
         {hasAlerts ? (
@@ -304,7 +304,7 @@ export default function AdminDashboard() {
 
       {/* Overview Stats */}
       <section className="space-y-3">
-        <h2 className="text-sm font-medium text-muted-foreground uppercase tracking-wide">
+        <h2 className="text-xs font-semibold text-muted-foreground uppercase tracking-widest">
           Overview
         </h2>
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
@@ -337,30 +337,34 @@ export default function AdminDashboard() {
 
       {/* Pickup Pipeline */}
       <section className="space-y-3">
-        <h2 className="text-sm font-medium text-muted-foreground uppercase tracking-wide">
+        <h2 className="text-xs font-semibold text-muted-foreground uppercase tracking-widest">
           Pickup Pipeline
         </h2>
         <Card>
-          <CardContent className="py-4">
-            <div className="flex items-center gap-2 overflow-x-auto">
-              {PIPELINE_STATUSES.map((status, i) => (
-                <div key={status} className="flex items-center gap-2">
-                  <div className="flex flex-col items-center gap-1 min-w-[80px]">
-                    <Badge
-                      variant="secondary"
-                      className={`${PICKUP_STATUS_COLORS[status]} text-base px-3 py-1`}
-                    >
-                      {pipeline[status] ?? 0}
-                    </Badge>
-                    <span className="text-xs text-muted-foreground whitespace-nowrap">
-                      {PICKUP_STATUS_LABELS[status]}
-                    </span>
+          <CardContent className="py-5 px-6">
+            <div className="flex items-center gap-1 overflow-x-auto">
+              {PIPELINE_STATUSES.map((status, i) => {
+                const count = pipeline[status] ?? 0;
+                const total = Object.values(pipeline).reduce((a, b) => a + b, 0) || 1;
+                const pct = Math.max(count / total * 100, 8);
+                return (
+                  <div key={status} className="flex items-center gap-1 flex-1">
+                    <div className="flex flex-col items-center gap-1.5 flex-1 min-w-[70px]">
+                      <div className="text-xl font-bold tabular-nums">{count}</div>
+                      <div
+                        className={`w-full h-2 rounded-full ${PICKUP_STATUS_COLORS[status].replace('text-', 'bg-').split(' ')[0]}`}
+                        style={{ opacity: count > 0 ? 1 : 0.3 }}
+                      />
+                      <span className="text-[10px] text-muted-foreground whitespace-nowrap font-medium uppercase tracking-wide">
+                        {PICKUP_STATUS_LABELS[status]}
+                      </span>
+                    </div>
+                    {i < PIPELINE_STATUSES.length - 1 && (
+                      <ArrowRight className="h-3 w-3 text-muted-foreground/40 shrink-0 mx-0.5" />
+                    )}
                   </div>
-                  {i < PIPELINE_STATUSES.length - 1 && (
-                    <ArrowRight className="h-4 w-4 text-muted-foreground shrink-0" />
-                  )}
-                </div>
-              ))}
+                );
+              })}
             </div>
           </CardContent>
         </Card>
@@ -382,23 +386,26 @@ export default function AdminDashboard() {
             {recentPickups.length === 0 ? (
               <p className="text-muted-foreground">No pickups yet.</p>
             ) : (
-              <div className="space-y-3">
+              <div className="divide-y">
                 {recentPickups.map((pickup) => (
                   <Link
                     key={pickup.id}
                     href={`/dashboard/admin/pickups/${pickup.id}`}
-                    className="flex items-center justify-between rounded-lg border p-3 hover:bg-muted/50 transition-colors"
+                    className="flex items-center justify-between py-3.5 px-1 hover:bg-muted/30 transition-colors rounded-md -mx-1 px-2"
                   >
-                    <div>
-                      <p className="font-medium">{pickup.pickup_number}</p>
-                      <p className="text-sm text-muted-foreground">
-                        {pickup.organizations?.name || "Unknown org"} &middot;{" "}
-                        {new Date(pickup.scheduled_date).toLocaleDateString()}
-                      </p>
+                    <div className="flex items-center gap-3">
+                      <div className="w-1.5 h-8 rounded-full bg-forest/20" />
+                      <div>
+                        <p className="font-medium text-sm">{pickup.pickup_number}</p>
+                        <p className="text-xs text-muted-foreground">
+                          {pickup.organizations?.name || "Unknown org"} &middot;{" "}
+                          {new Date(pickup.scheduled_date).toLocaleDateString()}
+                        </p>
+                      </div>
                     </div>
                     <Badge
                       variant="secondary"
-                      className={PICKUP_STATUS_COLORS[pickup.status]}
+                      className={`${PICKUP_STATUS_COLORS[pickup.status]} text-xs`}
                     >
                       {PICKUP_STATUS_LABELS[pickup.status]}
                     </Badge>

@@ -56,6 +56,7 @@ function NavMenuItems({
             {isGated ? (
               <SidebarMenuButton
                 disabled
+                tooltip={item.title}
                 className="opacity-50 cursor-not-allowed"
               >
                 <item.icon className="h-4 w-4" />
@@ -66,6 +67,7 @@ function NavMenuItems({
               <SidebarMenuButton
                 asChild
                 isActive={pathname === item.href}
+                tooltip={item.title}
               >
                 <Link href={item.href}>
                   <item.icon className="h-4 w-4" />

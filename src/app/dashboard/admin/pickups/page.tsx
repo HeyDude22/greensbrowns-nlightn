@@ -30,7 +30,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Truck, Eye, CheckCircle, ShieldCheck, Plus, Camera, ImagePlus, X, Sparkles, Loader2, CheckCheck, List, Map } from "lucide-react";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Truck, Eye, CheckCircle, ShieldCheck, Plus, Camera, ImagePlus, X, Sparkles, Loader2, CheckCheck, List, Map, HelpCircle } from "lucide-react";
 import Link from "next/link";
 import type { PickupStatus, VehicleType } from "@/types";
 import { toast } from "sonner";
@@ -45,7 +46,6 @@ import {
 import { createJobFromSuggestion } from "@/lib/create-job";
 import { CLUSTER_COLORS, VEHICLE_TYPE_LABELS } from "@/lib/constants";
 import SuggestionMap from "@/components/shared/suggestion-map-dynamic";
-import { SuggestionCard } from "@/components/shared/suggestion-card";
 
 const MAX_PHOTOS = 3;
 const MAX_FILE_SIZE = 2 * 1024 * 1024; // 2MB
@@ -122,12 +122,15 @@ export default function AdminPickupsPage() {
   const [suggestions, setSuggestions] = useState<JobSuggestion[]>([]);
   const [skippedPickups, setSkippedPickups] = useState<OptimizerPickup[]>([]);
   const [optimizing, setOptimizing] = useState(false);
-  const [acceptingIndex, setAcceptingIndex] = useState<number | null>(null);
-  const [acceptingAll, setAcceptingAll] = useState(false);
-  const [highlightedSuggestion, setHighlightedSuggestion] = useState<number | null>(null);
-  const [suggestFarmers, setSuggestFarmers] = useState<{ id: string; full_name: string | null }[]>([]);
-  const [suggestVehicles, setSuggestVehicles] = useState<{ id: string; registration_number: string; vehicle_type: VehicleType; capacity_kg: number; vehicle_drivers: { driver_id: string; drivers: { id: string; name: string } }[] }[]>([]);
+  const [selectedPickupIds, setSelectedPickupIds] = useState<Set<string>>(new Set());
+  const [creatingJob, setCreatingJob] = useState(false);
+  const [suggestFarmers, setSuggestFarmers] = useState<{ id: string; full_name: string | null; farm_lat: number | null; farm_lng: number | null }[]>([]);
+  const [suggestVehicles, setSuggestVehicles] = useState<{ id: string; registration_number: string; vehicle_type: VehicleType; capacity_kg: number; volume_capacity_m3: number | null; vehicle_drivers: { driver_id: string; drivers: { id: string; name: string } }[] }[]>([]);
   const [suggestBusyIds, setSuggestBusyIds] = useState<Set<string>>(new Set());
+  const [allOptimizerPickups, setAllOptimizerPickups] = useState<OptimizerPickup[]>([]);
+  const [selectedVehicle, setSelectedVehicle] = useState("");
+  const [selectedFarmer, setSelectedFarmer] = useState("");
+  const [suggestRates, setSuggestRates] = useState<OptimizerRate[]>([]);
 
   // Schedule pickup dialog state
   const [scheduleDialogOpen, setScheduleDialogOpen] = useState(false);
@@ -333,35 +336,7 @@ export default function AdminPickupsPage() {
         return drivers && drivers.length > 0;
       },
     ) as unknown as typeof suggestVehicles;
-
     setSuggestVehicles(allVehiclesWithDrivers);
-
-    const farmers = (farmerResult.data ?? [])
-      .filter((f: Record<string, unknown>) => {
-        const raw = f.farmer_details;
-        const details = Array.isArray(raw) ? raw[0] : raw;
-        return (details as Record<string, unknown> | null)?.is_active !== false;
-      })
-      .map((f: Record<string, unknown>) => ({
-        id: f.id as string,
-        full_name: f.full_name as string | null,
-      }));
-    setSuggestFarmers(farmers);
-
-    const optimizerPickups: OptimizerPickup[] = (pickupResult.data ?? []).map(
-      (p: Record<string, unknown>) => {
-        const org = p.organizations as Record<string, unknown> | null;
-        return {
-          id: p.id as string,
-          pickup_number: p.pickup_number as string,
-          org_name: (org?.name as string) ?? "",
-          estimated_weight_kg: p.estimated_weight_kg as number | null,
-          estimated_volume_m3: p.estimated_volume_m3 as number | null,
-          lat: (org?.lat as number) ?? null,
-          lng: (org?.lng as number) ?? null,
-        };
-      },
-    );
 
     const optimizerFarmers: OptimizerFarmer[] = (farmerResult.data ?? [])
       .filter((f: Record<string, unknown>) => {
@@ -379,6 +354,23 @@ export default function AdminPickupsPage() {
           farm_lng: (details?.farm_lng as number) ?? null,
         };
       });
+    setSuggestFarmers(optimizerFarmers);
+
+    const optimizerPickups: OptimizerPickup[] = (pickupResult.data ?? []).map(
+      (p: Record<string, unknown>) => {
+        const org = p.organizations as Record<string, unknown> | null;
+        return {
+          id: p.id as string,
+          pickup_number: p.pickup_number as string,
+          org_name: (org?.name as string) ?? "",
+          estimated_weight_kg: p.estimated_weight_kg as number | null,
+          estimated_volume_m3: p.estimated_volume_m3 as number | null,
+          lat: (org?.lat as number) ?? null,
+          lng: (org?.lng as number) ?? null,
+        };
+      },
+    );
+    setAllOptimizerPickups(optimizerPickups);
 
     const optimizerRates: OptimizerRate[] = (rateResult.data ?? []).map(
       (r: Record<string, unknown>) => ({
@@ -387,6 +379,7 @@ export default function AdminPickupsPage() {
         per_km_rs: r.per_km_rs as number,
       }),
     );
+    setSuggestRates(optimizerRates);
 
     const availableVehicles: OptimizerVehicle[] = allVehiclesWithDrivers
       .filter((v) => !busyIds.has(v.id))
@@ -394,7 +387,7 @@ export default function AdminPickupsPage() {
         id: v.id,
         vehicle_type: v.vehicle_type,
         capacity_kg: v.capacity_kg,
-        volume_capacity_m3: null,
+        volume_capacity_m3: v.volume_capacity_m3,
       }));
 
     if (optimizerPickups.length === 0) {
@@ -411,106 +404,97 @@ export default function AdminPickupsPage() {
       GREEN_WASTE_DENSITY_KG_PER_M3,
     );
 
-    if (result.suggestions.length === 0) {
-      toast.warning("No suggestions — check pickup coordinates and farmer locations");
-      setOptimizing(false);
-      return;
-    }
-
     setSuggestions(result.suggestions);
     setSkippedPickups(result.skippedPickups);
+    setSelectedPickupIds(new Set());
+    setSelectedVehicle("");
+    setSelectedFarmer("");
     setViewMode("suggest");
     setOptimizing(false);
-    toast.success(`${result.suggestions.length} suggestion(s) generated`);
+    toast.success(`${result.suggestions.length} suggestion(s) — click pickups on the map to group them into jobs`);
   }
 
-  async function handleAcceptSuggestion(index: number, farmerId: string, vehicleId: string) {
-    setAcceptingIndex(index);
+  function togglePickupSelection(id: string) {
+    setSelectedPickupIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  function selectCluster(index: number) {
     const suggestion = suggestions[index];
+    if (!suggestion) return;
+    setSelectedPickupIds(new Set(suggestion.pickupIds));
+    setSelectedFarmer(suggestion.farmerId);
+    // Auto-select a vehicle of the suggested type
+    const available = suggestVehicles.filter(
+      (v) => v.vehicle_type === suggestion.vehicleType && !suggestBusyIds.has(v.id),
+    );
+    setSelectedVehicle(available[0]?.id ?? "");
+  }
+
+  // Computed: selected pickup details
+  const selectedPickupDetails = allOptimizerPickups.filter((p) => selectedPickupIds.has(p.id));
+  const selectedTotalWeight = selectedPickupDetails.reduce((sum, p) => sum + (p.estimated_weight_kg ?? 0), 0);
+
+  async function handleCreateJobFromSelection() {
+    if (selectedPickupIds.size === 0 || !selectedVehicle || !selectedFarmer) {
+      toast.error("Select pickups, a vehicle, and a farmer");
+      return;
+    }
+    setCreatingJob(true);
 
     const tomorrow = new Date();
     tomorrow.setDate(tomorrow.getDate() + 1);
     const scheduledDate = tomorrow.toISOString().split("T")[0];
 
-    const vehicle = suggestVehicles.find((v) => v.id === vehicleId);
+    const vehicle = suggestVehicles.find((v) => v.id === selectedVehicle);
     const driver = vehicle?.vehicle_drivers[0]?.drivers;
 
     const result = await createJobFromSuggestion(supabase, {
       scheduledDate,
-      vehicleId,
+      vehicleId: selectedVehicle,
       driverId: driver?.id ?? null,
-      farmerId,
-      pickupIds: suggestion.pickupIds,
-      notes: `Auto-optimized: ${suggestion.pickups.length} pickups`,
+      farmerId: selectedFarmer,
+      pickupIds: Array.from(selectedPickupIds),
       status: "pending",
-      totalCostRs: suggestion.estimatedCostRs,
-      estimatedTrips: suggestion.estimatedTrips,
-      estimatedDistanceKm: suggestion.estimatedDistanceKm,
     });
 
     if ("error" in result) {
       toast.error(result.error);
-      setAcceptingIndex(null);
+      setCreatingJob(false);
       return;
     }
 
-    toast.success(`${result.jobNumber} created`);
-    setSuggestions((prev) => prev.filter((_, i) => i !== index));
-    // Update pickups list — mark these as assigned
-    const assignedIds = new Set(suggestion.pickupIds);
+    toast.success(`${result.jobNumber} created with ${selectedPickupIds.size} pickup(s)`);
+
+    // Remove assigned pickups from optimizer data and re-run suggestions
+    const assignedIds = new Set(selectedPickupIds);
     setPickups((prev) => prev.map((p) => assignedIds.has(p.id) ? { ...p, status: "assigned" as PickupStatus } : p));
-    setAcceptingIndex(null);
-  }
+    const remainingPickups = allOptimizerPickups.filter((p) => !assignedIds.has(p.id));
+    setAllOptimizerPickups(remainingPickups);
 
-  async function handleAcceptAll() {
-    setAcceptingAll(true);
-    let accepted = 0;
+    // Re-run optimizer on remaining pickups
+    const availableVehicles: OptimizerVehicle[] = suggestVehicles
+      .filter((v) => !suggestBusyIds.has(v.id) && v.id !== selectedVehicle)
+      .map((v) => ({ id: v.id, vehicle_type: v.vehicle_type, capacity_kg: v.capacity_kg, volume_capacity_m3: v.volume_capacity_m3 }));
 
-    const tomorrow = new Date();
-    tomorrow.setDate(tomorrow.getDate() + 1);
-    const scheduledDate = tomorrow.toISOString().split("T")[0];
-
-    const localBusyIds = new Set(suggestBusyIds);
-    const remainingSuggestions = [...suggestions];
-
-    for (let i = 0; i < remainingSuggestions.length; i++) {
-      const suggestion = remainingSuggestions[i];
-      const available = suggestVehicles.filter(
-        (v) => v.vehicle_type === suggestion.vehicleType && !localBusyIds.has(v.id),
-      );
-
-      if (available.length === 0) continue;
-
-      const vehicle = available[0];
-      const driver = vehicle.vehicle_drivers[0]?.drivers;
-
-      const result = await createJobFromSuggestion(supabase, {
-        scheduledDate,
-        vehicleId: vehicle.id,
-        driverId: driver?.id ?? null,
-        farmerId: suggestion.farmerId,
-        pickupIds: suggestion.pickupIds,
-        status: "pending",
-        totalCostRs: suggestion.estimatedCostRs,
-        estimatedTrips: suggestion.estimatedTrips,
-        estimatedDistanceKm: suggestion.estimatedDistanceKm,
-      });
-
-      if (!("error" in result)) {
-        accepted++;
-        localBusyIds.add(vehicle.id);
-        const assignedIds = new Set(suggestion.pickupIds);
-        setPickups((prev) => prev.map((p) => assignedIds.has(p.id) ? { ...p, status: "assigned" as PickupStatus } : p));
-      }
+    if (remainingPickups.length > 0 && suggestFarmers.length > 0) {
+      const newResult = optimizeJobs(remainingPickups, suggestFarmers, suggestRates, availableVehicles, GREEN_WASTE_DENSITY_KG_PER_M3);
+      setSuggestions(newResult.suggestions);
+      setSkippedPickups(newResult.skippedPickups);
+    } else {
+      setSuggestions([]);
+      setSkippedPickups([]);
     }
 
-    setSuggestions([]);
-    setAcceptingAll(false);
-    toast.success(`${accepted} job(s) created and dispatched`);
-  }
-
-  function handleDismissSuggestion(index: number) {
-    setSuggestions((prev) => prev.filter((_, i) => i !== index));
+    setSuggestBusyIds((prev) => new Set([...prev, selectedVehicle]));
+    setSelectedPickupIds(new Set());
+    setSelectedVehicle("");
+    setSelectedFarmer("");
+    setCreatingJob(false);
   }
 
   async function openScheduleDialog() {
@@ -640,73 +624,199 @@ export default function AdminPickupsPage() {
         description="Monitor pickups and track status"
         action={
           <div className="flex gap-2">
-            {viewMode === "suggest" && suggestions.length > 0 && (
-              <Button onClick={handleAcceptAll} disabled={acceptingAll}>
-                {acceptingAll ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <CheckCheck className="mr-2 h-4 w-4" />}
-                Accept All ({suggestions.length})
-              </Button>
-            )}
             {viewMode === "suggest" ? (
-              <Button variant="outline" onClick={() => { setViewMode("list"); setSuggestions([]); }}>
-                <List className="mr-2 h-4 w-4" />
-                Back to List
-              </Button>
+              <>
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <Button variant="ghost" size="icon" className="h-9 w-9">
+                      <HelpCircle className="h-4 w-4" />
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent side="bottom" align="end" className="w-80 text-sm space-y-2">
+                    <p className="font-medium">How to create jobs</p>
+                    <ol className="list-decimal list-inside space-y-1 text-muted-foreground">
+                      <li>Colored dots on the map are suggested groupings</li>
+                      <li><strong>Click markers</strong> on the map to select pickups, or click a suggestion row below to select a group</li>
+                      <li>Mix and match — select pickups from different groups freely</li>
+                      <li>Choose a <strong>vehicle</strong> and <strong>farmer</strong> in the panel that appears</li>
+                      <li>Click <strong>Create Job</strong> — the job is created instantly</li>
+                      <li>Remaining pickups are re-grouped automatically</li>
+                    </ol>
+                    <p className="text-xs text-muted-foreground pt-1">Tip: Click a colored dot in a popup to select its entire cluster.</p>
+                  </PopoverContent>
+                </Popover>
+                <Button variant="outline" onClick={() => { setViewMode("list"); setSuggestions([]); setSelectedPickupIds(new Set()); }}>
+                  <List className="mr-2 h-4 w-4" />
+                  Back to List
+                </Button>
+              </>
             ) : (
-              <Button variant="outline" onClick={handleSuggestJobs} disabled={optimizing}>
-                {optimizing ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Sparkles className="mr-2 h-4 w-4" />}
-                Suggest Jobs
-              </Button>
+              <>
+                <Button variant="outline" onClick={handleSuggestJobs} disabled={optimizing}>
+                  {optimizing ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Sparkles className="mr-2 h-4 w-4" />}
+                  Suggest Jobs
+                </Button>
+                <Button onClick={openScheduleDialog}>
+                  <Plus className="mr-2 h-4 w-4" />
+                  Schedule Pickup
+                </Button>
+              </>
             )}
-            <Button onClick={openScheduleDialog}>
-              <Plus className="mr-2 h-4 w-4" />
-              Schedule Pickup
-            </Button>
           </div>
         }
       />
 
       {viewMode === "suggest" ? (
         <div className="space-y-4">
+          {/* Map */}
           <Card>
             <CardContent className="p-0 overflow-hidden rounded-lg">
               <SuggestionMap
                 suggestions={suggestions}
+                farmers={suggestFarmers}
                 skippedPickups={skippedPickups}
-                highlightedIndex={highlightedSuggestion}
+                selectedIds={selectedPickupIds}
+                onTogglePickup={togglePickupSelection}
+                onSelectCluster={selectCluster}
               />
             </CardContent>
           </Card>
 
+          {/* Selection panel */}
+          {selectedPickupIds.size > 0 && (
+            <Card>
+              <CardContent className="p-4 space-y-4">
+                <div className="flex items-center justify-between">
+                  <h3 className="font-medium">
+                    {selectedPickupIds.size} pickup{selectedPickupIds.size !== 1 ? "s" : ""} selected
+                    <span className="text-muted-foreground font-normal ml-2">
+                      {selectedTotalWeight > 1000
+                        ? `${(selectedTotalWeight / 1000).toFixed(1)}t`
+                        : `${Math.round(selectedTotalWeight)} kg`}
+                    </span>
+                  </h3>
+                  <Button variant="ghost" size="sm" onClick={() => setSelectedPickupIds(new Set())}>
+                    Clear
+                  </Button>
+                </div>
+
+                <div className="space-y-1 max-h-32 overflow-y-auto">
+                  {selectedPickupDetails.map((p) => (
+                    <div key={p.id} className="flex items-center justify-between text-sm py-1">
+                      <div className="flex items-center gap-2">
+                        <span className="font-medium">{p.pickup_number}</span>
+                        <span className="text-muted-foreground">{p.org_name}</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs text-muted-foreground">{p.estimated_weight_kg ?? 0} kg</span>
+                        <Button variant="ghost" size="sm" className="h-6 w-6 p-0" onClick={() => togglePickupSelection(p.id)}>
+                          <X className="h-3 w-3" />
+                        </Button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                <div className="grid grid-cols-2 gap-3 border-t pt-3">
+                  <div className="space-y-1">
+                    <Label className="text-xs">Vehicle</Label>
+                    <Select value={selectedVehicle} onValueChange={setSelectedVehicle}>
+                      <SelectTrigger className="h-8 text-xs">
+                        <SelectValue placeholder="Select vehicle" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {suggestVehicles.filter((v) => !suggestBusyIds.has(v.id)).map((v) => (
+                          <SelectItem key={v.id} value={v.id} className="text-xs">
+                            {v.registration_number} — {VEHICLE_TYPE_LABELS[v.vehicle_type]} ({v.capacity_kg} kg)
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-1">
+                    <Label className="text-xs">Farmer</Label>
+                    <Select value={selectedFarmer} onValueChange={setSelectedFarmer}>
+                      <SelectTrigger className="h-8 text-xs">
+                        <SelectValue placeholder="Select farmer" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {suggestFarmers.filter((f) => f.farm_lat && f.farm_lng).map((f) => (
+                          <SelectItem key={f.id} value={f.id} className="text-xs">
+                            {f.full_name || f.id}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+
+                <Button
+                  className="w-full"
+                  onClick={handleCreateJobFromSelection}
+                  disabled={creatingJob || !selectedVehicle || !selectedFarmer}
+                >
+                  {creatingJob ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <CheckCheck className="mr-2 h-4 w-4" />}
+                  Create Job ({selectedPickupIds.size} pickups)
+                </Button>
+              </CardContent>
+            </Card>
+          )}
+
+          {/* Remaining suggestions */}
+          {suggestions.length > 0 && (
+            <Card>
+              <CardContent className="p-4">
+                <h3 className="font-medium mb-3 text-sm">Suggested Groupings</h3>
+                <div className="space-y-2">
+                  {suggestions.map((s, i) => {
+                    const color = CLUSTER_COLORS[i % CLUSTER_COLORS.length];
+                    return (
+                      <div
+                        key={s.pickupIds.join(",")}
+                        className="flex items-center justify-between rounded-lg border p-3 hover:bg-muted/50 cursor-pointer transition-colors"
+                        onClick={() => selectCluster(i)}
+                      >
+                        <div className="flex items-center gap-3">
+                          <div className="w-3 h-3 rounded-full shrink-0" style={{ backgroundColor: color }} />
+                          <div>
+                            <span className="text-sm font-medium">
+                              {s.pickups.length} pickup{s.pickups.length !== 1 ? "s" : ""}
+                            </span>
+                            <span className="text-xs text-muted-foreground ml-2">
+                              {s.pickups.map((p) => p.org_name).join(", ")}
+                            </span>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-4 text-xs text-muted-foreground shrink-0">
+                          <span>{Math.round(s.totalWeightKg)} kg</span>
+                          <span>{s.farmerName}</span>
+                          <span>{VEHICLE_TYPE_LABELS[s.vehicleType]}</span>
+                          <span>₹{Math.round(s.estimatedCostRs).toLocaleString("en-IN")}</span>
+                          <Button size="sm" variant="outline" className="h-7 text-xs" onClick={(e) => { e.stopPropagation(); selectCluster(i); }}>
+                            Select
+                          </Button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
           {skippedPickups.length > 0 && (
             <p className="text-sm text-muted-foreground">
-              {skippedPickups.length} pickup(s) skipped — missing coordinates or no matching farmer/vehicle.
+              {skippedPickups.length} pickup(s) not included — missing coordinates.
             </p>
           )}
 
-          {suggestions.length > 0 ? (
-            <div className="grid gap-4 md:grid-cols-2">
-              {suggestions.map((s, i) => (
-                <SuggestionCard
-                  key={s.pickupIds.join(",")}
-                  suggestion={s}
-                  index={i}
-                  color={CLUSTER_COLORS[i % CLUSTER_COLORS.length]}
-                  farmers={suggestFarmers}
-                  vehicles={suggestVehicles.filter((v) => !suggestBusyIds.has(v.id))}
-                  onAccept={(farmerId, vehicleId) => handleAcceptSuggestion(i, farmerId, vehicleId)}
-                  onDismiss={() => handleDismissSuggestion(i)}
-                  onHover={setHighlightedSuggestion}
-                  accepting={acceptingIndex === i}
-                />
-              ))}
-            </div>
-          ) : (
+          {allOptimizerPickups.length === 0 && (
             <Card>
               <CardContent className="pt-6">
                 <EmptyState
                   icon={Sparkles}
-                  title="All suggestions handled"
-                  description="All suggestions have been accepted or dismissed. Go back to the list view."
+                  title="All pickups assigned"
+                  description="All verified pickups have been assigned to jobs."
                 />
               </CardContent>
             </Card>

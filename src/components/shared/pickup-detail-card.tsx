@@ -10,6 +10,15 @@ interface PickupDetailCardProps {
   orgName?: string | null;
 }
 
+function DetailRow({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div className="flex items-start justify-between py-2.5 border-b border-dashed border-border/60 last:border-0">
+      <span className="text-sm text-muted-foreground">{label}</span>
+      <span className="text-sm font-medium text-right">{children}</span>
+    </div>
+  );
+}
+
 export function PickupDetailCard({
   pickup,
   vehicleRegNumber,
@@ -18,77 +27,60 @@ export function PickupDetailCard({
 }: PickupDetailCardProps) {
   return (
     <Card>
-      <CardHeader>
-        <CardTitle>Details</CardTitle>
-      </CardHeader>
-      <CardContent className="grid gap-3">
-        <div className="flex justify-between">
-          <span className="text-muted-foreground">Status</span>
+      <CardHeader className="pb-2">
+        <CardTitle className="flex items-center justify-between">
+          <span>Details</span>
           <Badge
             variant="secondary"
             className={PICKUP_STATUS_COLORS[pickup.status]}
           >
             {PICKUP_STATUS_LABELS[pickup.status]}
           </Badge>
-        </div>
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="pt-0">
         {orgName !== undefined && (
-          <div className="flex justify-between">
-            <span className="text-muted-foreground">Organization</span>
-            <span>{orgName || "—"}</span>
-          </div>
+          <DetailRow label="Organization">{orgName || "—"}</DetailRow>
         )}
-        <div className="flex justify-between">
-          <span className="text-muted-foreground">Scheduled Date</span>
-          <span>{new Date(pickup.scheduled_date).toLocaleDateString()}</span>
-        </div>
-        <div className="flex justify-between">
-          <span className="text-muted-foreground">Time Slot</span>
+        <DetailRow label="Scheduled Date">
+          {new Date(pickup.scheduled_date).toLocaleDateString()}
+        </DetailRow>
+        <DetailRow label="Time Slot">
           <span className="capitalize">{pickup.scheduled_slot || "—"}</span>
-        </div>
-        <div className="flex justify-between">
-          <span className="text-muted-foreground">Estimated Weight</span>
-          <span>
-            {pickup.estimated_weight_kg
-              ? `${(Number(pickup.estimated_weight_kg) / 1000).toFixed(2)} tonnes`
-              : "—"}
-          </span>
-        </div>
+        </DetailRow>
+        <DetailRow label="Estimated Weight">
+          {pickup.estimated_weight_kg
+            ? `${(Number(pickup.estimated_weight_kg) / 1000).toFixed(2)} tonnes`
+            : "—"}
+        </DetailRow>
         {pickup.actual_weight_kg && (
-          <div className="flex justify-between">
-            <span className="text-muted-foreground">Actual Weight</span>
-            <span>{(Number(pickup.actual_weight_kg) / 1000).toFixed(2)} tonnes</span>
-          </div>
+          <DetailRow label="Actual Weight">
+            {(Number(pickup.actual_weight_kg) / 1000).toFixed(2)} tonnes
+          </DetailRow>
         )}
-        {pickup.loading_helper_required !== undefined && (
-          <div className="flex justify-between">
-            <span className="text-muted-foreground">Loading Helper</span>
-            <span>{pickup.loading_helper_required ? "Required" : "Not needed"}</span>
-          </div>
-        )}
-        <div className="flex justify-between">
-          <span className="text-muted-foreground">Vehicle</span>
-          <span>{vehicleRegNumber || "Not assigned"}</span>
-        </div>
-        <div className="flex justify-between">
-          <span className="text-muted-foreground">Farmer</span>
-          <span>{farmerName || "Not assigned"}</span>
-        </div>
+        <DetailRow label="Loading Helper">
+          {pickup.loading_helper_required ? "Required" : "Not needed"}
+        </DetailRow>
+        <DetailRow label="Vehicle">{vehicleRegNumber || "Not assigned"}</DetailRow>
+        <DetailRow label="Farmer">{farmerName || "Not assigned"}</DetailRow>
+
         {pickup.notes && (
-          <div>
-            <span className="text-muted-foreground">Notes</span>
-            <p className="mt-1 text-sm">{pickup.notes}</p>
+          <div className="pt-3 mt-1 border-t">
+            <span className="text-sm text-muted-foreground">Notes</span>
+            <p className="mt-1 text-sm bg-muted/50 rounded-md p-3">{pickup.notes}</p>
           </div>
         )}
+
         {pickup.waste_photo_urls && pickup.waste_photo_urls.length > 0 && (
-          <div>
-            <span className="text-muted-foreground">Waste Photos</span>
+          <div className="pt-3 mt-1 border-t">
+            <span className="text-sm text-muted-foreground">Waste Photos</span>
             <div className="flex gap-2 mt-2">
               {pickup.waste_photo_urls.map((url: string, i: number) => (
                 <a key={i} href={url} target="_blank" rel="noopener noreferrer">
                   <img
                     src={url}
                     alt={`Waste photo ${i + 1}`}
-                    className="h-24 w-24 rounded-md border object-cover hover:opacity-80 transition-opacity"
+                    className="h-24 w-24 rounded-lg border object-cover hover:opacity-80 transition-opacity hover:shadow-md"
                   />
                 </a>
               ))}

@@ -140,3 +140,13 @@
     @apply bg-background text-foreground;
   }
 }
+
+/* Refined table styling */
+@layer components {
+  table th {
+    @apply text-xs font-semibold uppercase tracking-wider text-muted-foreground;
+  }
+  table td {
+    @apply text-sm;
+  }
+}
