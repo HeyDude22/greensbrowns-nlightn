@@ -16,33 +16,107 @@ const TEST_BWG_EMAIL = "test-bwg@a-gain.in";
 
 const supabase = createAdminClient();
 
-async function simulateWebhook(
+/**
+ * Build a Meta Cloud API webhook payload and POST it to our webhook route.
+ * Returns { ok, status } from the JSON response.
+ */
+async function simulateTextWebhook(
   baseUrl: string,
   from: string,
-  body: string,
-  numMedia = "0",
-  mediaUrl?: string
+  body: string
 ) {
-  const params = new URLSearchParams({
-    From: `whatsapp:+${from}`,
-    Body: body,
-    NumMedia: numMedia,
-  });
-  if (mediaUrl) params.set("MediaUrl0", mediaUrl);
+  const payload = {
+    entry: [
+      {
+        changes: [
+          {
+            value: {
+              messages: [
+                {
+                  from,
+                  type: "text",
+                  text: { body },
+                },
+              ],
+            },
+          },
+        ],
+      },
+    ],
+  };
+  return postWebhook(baseUrl, payload);
+}
 
+async function simulateButtonWebhook(
+  baseUrl: string,
+  from: string,
+  buttonId: string,
+  buttonTitle: string
+) {
+  const payload = {
+    entry: [
+      {
+        changes: [
+          {
+            value: {
+              messages: [
+                {
+                  from,
+                  type: "interactive",
+                  interactive: {
+                    type: "button_reply",
+                    button_reply: { id: buttonId, title: buttonTitle },
+                  },
+                },
+              ],
+            },
+          },
+        ],
+      },
+    ],
+  };
+  return postWebhook(baseUrl, payload);
+}
+
+async function simulateImageWebhook(
+  baseUrl: string,
+  from: string,
+  mediaId = "test_media_id"
+) {
+  const payload = {
+    entry: [
+      {
+        changes: [
+          {
+            value: {
+              messages: [
+                {
+                  from,
+                  type: "image",
+                  image: { id: mediaId, mime_type: "image/jpeg" },
+                },
+              ],
+            },
+          },
+        ],
+      },
+    ],
+  };
+  return postWebhook(baseUrl, payload);
+}
+
+async function postWebhook(baseUrl: string, payload: unknown) {
   const res = await fetch(`${baseUrl}/api/webhooks/whatsapp`, {
     method: "POST",
     headers: {
-      "Content-Type": "application/x-www-form-urlencoded",
+      "Content-Type": "application/json",
       "x-internal-secret": process.env.CRON_SECRET || "",
     },
-    body: params.toString(),
+    body: JSON.stringify(payload),
   });
 
-  const text = await res.text();
-  // Extract message from TwiML
-  const match = text.match(/<Message>([\s\S]*?)<\/Message>/);
-  return match ? match[1] : text;
+  const json = await res.json();
+  return { ok: json.ok === true, status: res.status, body: json };
 }
 
 async function getPickupStatus(pickupId: string) {
@@ -364,27 +438,24 @@ export async function GET(req: NextRequest) {
 
     // === STEP 3: Collector sends "picked up" ===
     if (step === "picked-up" || step === "all") {
-      const reply1 = await simulateWebhook(
+      const res1 = await simulateTextWebhook(
         baseUrl,
         TEST_COLLECTOR_PHONE,
         "picked up"
       );
       assert(
         "collector-picked-up-prompt",
-        reply1.includes("photo"),
-        `Reply: ${reply1}`
+        res1.ok,
+        `Response ok: ${res1.ok}, status: ${res1.status}`
       );
 
-      // Simulate photo (use a dummy URL — handler will try to fetch it)
-      // For testing, we'll directly call the handler with a test image
-      const reply2 = await simulateWebhook(
+      // Simulate photo via Meta image message (handler downloads from Meta API using media ID)
+      const res2 = await simulateImageWebhook(
         baseUrl,
         TEST_COLLECTOR_PHONE,
-        "",
-        "1",
-        "https://via.placeholder.com/100x100.jpg"
+        "test_pickup_photo_id"
       );
-      assert("collector-picked-up-photo", true, `Reply: ${reply2}`);
+      assert("collector-picked-up-photo", res2.ok, `Response ok: ${res2.ok}, status: ${res2.status}`);
 
       const statusAfterPickup = await getPickupStatus(testIds.pickupId!);
       assert(
@@ -396,25 +467,23 @@ export async function GET(req: NextRequest) {
 
     // === STEP 4: Collector sends "delivered" ===
     if (step === "delivered" || step === "all") {
-      const reply1 = await simulateWebhook(
+      const res1 = await simulateTextWebhook(
         baseUrl,
         TEST_COLLECTOR_PHONE,
         "delivered"
       );
       assert(
         "collector-delivered-prompt",
-        reply1.includes("photo"),
-        `Reply: ${reply1}`
+        res1.ok,
+        `Response ok: ${res1.ok}, status: ${res1.status}`
       );
 
-      const reply2 = await simulateWebhook(
+      const res2 = await simulateImageWebhook(
         baseUrl,
         TEST_COLLECTOR_PHONE,
-        "",
-        "1",
-        "https://via.placeholder.com/100x100.jpg"
+        "test_delivery_photo_id"
       );
-      assert("collector-delivered-photo", true, `Reply: ${reply2}`);
+      assert("collector-delivered-photo", res2.ok, `Response ok: ${res2.ok}, status: ${res2.status}`);
 
       const statusAfterDelivery = await getPickupStatus(testIds.pickupId!);
       assert(
@@ -424,13 +493,18 @@ export async function GET(req: NextRequest) {
       );
     }
 
-    // === STEP 5: Farmer confirms receipt ===
+    // === STEP 5: Farmer confirms receipt (via interactive button) ===
     if (step === "farmer-received" || step === "all") {
-      const reply = await simulateWebhook(baseUrl, TEST_FARMER_PHONE, "1");
+      const res = await simulateButtonWebhook(
+        baseUrl,
+        TEST_FARMER_PHONE,
+        "received",
+        "Received"
+      );
       assert(
         "farmer-received-reply",
-        reply.includes("confirmed") || reply.includes("Received") || reply.includes("received"),
-        `Reply: ${reply}`
+        res.ok,
+        `Response ok: ${res.ok}, status: ${res.status}`
       );
 
       const statusAfterReceived = await getPickupStatus(testIds.pickupId!);
@@ -441,7 +515,7 @@ export async function GET(req: NextRequest) {
       );
     }
 
-    // === STEP 5b (alternative): Farmer rejects ===
+    // === STEP 5b (alternative): Farmer rejects (via interactive button) ===
     if (step === "farmer-rejected") {
       // Reset pickup to delivered for rejection test
       await supabase
@@ -453,11 +527,16 @@ export async function GET(req: NextRequest) {
         })
         .eq("id", testIds.pickupId!);
 
-      const reply = await simulateWebhook(baseUrl, TEST_FARMER_PHONE, "2");
+      const res = await simulateButtonWebhook(
+        baseUrl,
+        TEST_FARMER_PHONE,
+        "reject_mixed",
+        "Reject-Mixed Waste"
+      );
       assert(
         "farmer-rejected-reply",
-        reply.includes("Rejected") || reply.includes("rejected") || reply.includes("mixed"),
-        `Reply: ${reply}`
+        res.ok,
+        `Response ok: ${res.ok}, status: ${res.status}`
       );
 
       const statusAfterReject = await getPickupStatus(testIds.pickupId!);

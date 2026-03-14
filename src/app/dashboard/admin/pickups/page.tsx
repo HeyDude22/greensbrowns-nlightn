@@ -87,6 +87,7 @@ interface PickupWithOrg {
   estimated_volume_m3: number | null;
   vehicle_id: string | null;
   farmer_id: string | null;
+  waste_photo_urls: string[] | null;
   organizations: { name: string } | null;
   pickup_trips: { count: number }[] | null;
   job_pickups: { jobs: { job_number: string } | null }[] | null;
@@ -151,7 +152,7 @@ export default function AdminPickupsPage() {
     async function fetchData() {
       const { data } = await supabase
         .from("pickups")
-        .select("id, pickup_number, status, scheduled_date, scheduled_slot, estimated_weight_kg, estimated_volume_m3, vehicle_id, farmer_id, organizations(name), pickup_trips(count), job_pickups(jobs(job_number))")
+        .select("id, pickup_number, status, scheduled_date, scheduled_slot, estimated_weight_kg, estimated_volume_m3, vehicle_id, farmer_id, waste_photo_urls, organizations(name), pickup_trips(count), job_pickups(jobs(job_number))")
         .order("scheduled_date", { ascending: false });
 
       if (data) setPickups(data as unknown as PickupWithOrg[]);
@@ -356,7 +357,7 @@ export default function AdminPickupsPage() {
         loading_helper_required: scheduleLoadingHelper,
         waste_photo_urls: photoUrls,
       })
-      .select("id, pickup_number, status, scheduled_date, scheduled_slot, estimated_weight_kg, estimated_volume_m3, vehicle_id, farmer_id, organizations(name), pickup_trips(count), job_pickups(jobs(job_number))")
+      .select("id, pickup_number, status, scheduled_date, scheduled_slot, estimated_weight_kg, estimated_volume_m3, vehicle_id, farmer_id, waste_photo_urls, organizations(name), pickup_trips(count), job_pickups(jobs(job_number))")
       .single();
 
     if (error) {
@@ -688,7 +689,7 @@ export default function AdminPickupsPage() {
 
       {/* Verify Pickup Dialog */}
       <Dialog open={verifyDialogOpen} onOpenChange={setVerifyDialogOpen}>
-        <DialogContent className="max-w-md">
+        <DialogContent className="max-w-lg">
           <DialogHeader>
             <DialogTitle>Verify Pickup</DialogTitle>
             <DialogDescription>
@@ -699,6 +700,22 @@ export default function AdminPickupsPage() {
             <div className="text-sm text-muted-foreground">
               Organization: <strong>{verifyingPickup?.organizations?.name ?? "—"}</strong>
             </div>
+            {verifyingPickup?.waste_photo_urls && verifyingPickup.waste_photo_urls.length > 0 && (
+              <div className="space-y-2">
+                <Label>Waste Photos</Label>
+                <div className="flex gap-2 overflow-x-auto">
+                  {verifyingPickup.waste_photo_urls.map((url, i) => (
+                    <a key={i} href={url} target="_blank" rel="noopener noreferrer">
+                      <img
+                        src={url}
+                        alt={`Waste photo ${i + 1}`}
+                        className="h-32 w-32 rounded-md border object-cover hover:opacity-80 transition-opacity"
+                      />
+                    </a>
+                  ))}
+                </div>
+              </div>
+            )}
             <div className="space-y-2">
               <Label htmlFor="verifyWeight">Estimated Weight (kg)</Label>
               <Input

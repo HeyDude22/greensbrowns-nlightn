@@ -79,6 +79,22 @@ export function PickupDetailCard({
             <p className="mt-1 text-sm">{pickup.notes}</p>
           </div>
         )}
+        {pickup.waste_photo_urls && pickup.waste_photo_urls.length > 0 && (
+          <div>
+            <span className="text-muted-foreground">Waste Photos</span>
+            <div className="flex gap-2 mt-2">
+              {pickup.waste_photo_urls.map((url: string, i: number) => (
+                <a key={i} href={url} target="_blank" rel="noopener noreferrer">
+                  <img
+                    src={url}
+                    alt={`Waste photo ${i + 1}`}
+                    className="h-24 w-24 rounded-md border object-cover hover:opacity-80 transition-opacity"
+                  />
+                </a>
+              ))}
+            </div>
+          </div>
+        )}
       </CardContent>
     </Card>
   );

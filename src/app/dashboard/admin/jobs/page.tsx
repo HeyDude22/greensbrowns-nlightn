@@ -132,6 +132,7 @@ interface PendingPickup {
   estimated_weight_kg: number | null;
   estimated_volume_m3: number | null;
   scheduled_date: string;
+  scheduled_slot: string | null;
   org_name: string;
   org_address: string;
   org_type: string;
@@ -549,21 +550,17 @@ export default function AdminJobsPage() {
                       </Badge>
                     </TableCell>
                     <TableCell>
-                      {job.status === "draft" ? (
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          onClick={() => setEditingDraftJob(job)}
-                        >
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => setEditingDraftJob(job)}
+                      >
+                        {job.status === "draft" ? (
                           <Pencil className="h-3 w-3" />
-                        </Button>
-                      ) : (
-                        <Button size="sm" variant="ghost" asChild>
-                          <Link href={`/dashboard/admin/jobs`}>
-                            <Eye className="h-3 w-3" />
-                          </Link>
-                        </Button>
-                      )}
+                        ) : (
+                          <Eye className="h-3 w-3" />
+                        )}
+                      </Button>
                     </TableCell>
                   </TableRow>
                 ))}
@@ -898,10 +895,11 @@ function EditDraftJobDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>Edit Draft — {job.job_number}</DialogTitle>
+          <DialogTitle>{job.status === "draft" ? "Edit Draft" : "Job Details"} — {job.job_number}</DialogTitle>
           <DialogDescription>
-            Edit vehicle, driver, farmer, or remove pickups. Confirm to set the
-            job to pending.
+            {job.status === "draft"
+              ? "Edit vehicle, driver, farmer, or remove pickups. Confirm to set the job to pending."
+              : `Status: ${job.status.replace(/_/g, " ").replace(/\b\w/g, (c: string) => c.toUpperCase())}`}
           </DialogDescription>
         </DialogHeader>
 
@@ -1110,35 +1108,37 @@ function EditDraftJobDialog({
           </div>
         )}
 
-        <DialogFooter className="flex items-center justify-between sm:justify-between gap-2">
-          <Button
-            variant="destructive"
-            onClick={handleDeleteDraft}
-            disabled={deleting || saving || confirming}
-          >
-            {deleting ? (
-              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-            ) : (
-              <Trash2 className="mr-2 h-4 w-4" />
-            )}
-            Delete Draft
-          </Button>
-          <div className="flex gap-2">
+        {job.status === "draft" && (
+          <DialogFooter className="flex items-center justify-between sm:justify-between gap-2">
             <Button
-              variant="outline"
-              onClick={handleSave}
-              disabled={saving || deleting || confirming}
+              variant="destructive"
+              onClick={handleDeleteDraft}
+              disabled={deleting || saving || confirming}
             >
-              {saving ? "Saving..." : "Save Draft"}
+              {deleting ? (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              ) : (
+                <Trash2 className="mr-2 h-4 w-4" />
+              )}
+              Delete Draft
             </Button>
-            <Button
-              onClick={handleConfirm}
-              disabled={confirming || deleting || saving || jobPickups.length === 0}
-            >
-              {confirming ? "Confirming..." : "Confirm Job"}
-            </Button>
-          </div>
-        </DialogFooter>
+            <div className="flex gap-2">
+              <Button
+                variant="outline"
+                onClick={handleSave}
+                disabled={saving || deleting || confirming}
+              >
+                {saving ? "Saving..." : "Save Draft"}
+              </Button>
+              <Button
+                onClick={handleConfirm}
+                disabled={confirming || deleting || saving || jobPickups.length === 0}
+              >
+                {confirming ? "Confirming..." : "Confirm Job"}
+              </Button>
+            </div>
+          </DialogFooter>
+        )}
       </DialogContent>
     </Dialog>
   );
@@ -1295,6 +1295,7 @@ function CreateJobDialog({
           estimated_weight_kg: r.estimated_weight_kg as number | null,
           estimated_volume_m3: r.estimated_volume_m3 as number | null,
           scheduled_date: r.scheduled_date as string,
+          scheduled_slot: (r.scheduled_slot as string) ?? null,
           org_name: r.org_name as string,
           org_address: r.org_address as string,
           org_type: r.org_type as string,
@@ -1308,7 +1309,7 @@ function CreateJobDialog({
 
     const { data: allPending, error: pendingErr } = await supabase
       .from("pickups")
-      .select("id, pickup_number, organization_id, estimated_weight_kg, estimated_volume_m3, scheduled_date, organizations(name, address, org_type, lat, lng)")
+      .select("id, pickup_number, organization_id, estimated_weight_kg, estimated_volume_m3, scheduled_date, scheduled_slot, organizations(name, address, org_type, lat, lng)")
       .eq("status", "verified")
       .order("scheduled_date", { ascending: true });
 
@@ -1328,6 +1329,7 @@ function CreateJobDialog({
           estimated_weight_kg: p.estimated_weight_kg as number | null,
           estimated_volume_m3: p.estimated_volume_m3 as number | null,
           scheduled_date: p.scheduled_date as string,
+          scheduled_slot: (p.scheduled_slot as string) ?? null,
           org_name: (org?.name as string) ?? "",
           org_address: (org?.address as string) ?? "",
           org_type: (org?.org_type as string) ?? "",
@@ -1697,9 +1699,11 @@ function PickupRow({
           )}
         </div>
         <div className="text-xs text-muted-foreground mt-0.5">
+          {pickup.scheduled_date}
+          {pickup.scheduled_slot ? ` · ${capitalize(pickup.scheduled_slot)}` : ""}
           {pickup.estimated_weight_kg
-            ? `Est. ${pickup.estimated_weight_kg} kg`
-            : "Weight TBD"}
+            ? ` · Est. ${pickup.estimated_weight_kg} kg`
+            : " · Weight TBD"}
           {pickup.org_type ? ` · ${capitalize(pickup.org_type)}` : ""}
           {pickup.org_address ? ` · ${pickup.org_address}` : ""}
         </div>

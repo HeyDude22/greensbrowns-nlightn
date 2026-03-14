@@ -8,9 +8,7 @@ export async function GET(req: NextRequest) {
   const mode = searchParams.get("hub.mode");
   const token = searchParams.get("hub.verify_token");
   const challenge = searchParams.get("hub.challenge");
-  const expected = (process.env.META_WEBHOOK_VERIFY_TOKEN || "").trim();
-
-  console.log("[Webhook] Verify attempt:", { mode, tokenLen: token?.length, expectedLen: expected.length, match: token === expected });
+  const expected = process.env.META_WEBHOOK_VERIFY_TOKEN?.trim() ?? "";
 
   if (mode === "subscribe" && token === expected) {
     console.log("[Webhook] Meta verification successful");
