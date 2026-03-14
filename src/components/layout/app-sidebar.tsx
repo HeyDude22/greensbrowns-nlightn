@@ -90,15 +90,19 @@ export function AppSidebar({ role, userName, hasOrg = true }: AppSidebarProps) {
     .slice(0, 2);
 
   return (
-    <Sidebar>
+    <Sidebar collapsible="icon">
       <SidebarHeader className="border-b border-sidebar-border px-4 py-4">
         <Link href="/" className="flex items-center gap-2">
-          <span className="text-xl font-bold">
+          <span className="text-xl font-bold group-data-[collapsible=icon]:hidden">
             <span className="text-sidebar-primary">Greens</span>
             <span className="text-accent-yellow">Browns</span>
           </span>
+          <span className="text-xl font-bold hidden group-data-[collapsible=icon]:block">
+            <span className="text-sidebar-primary">G</span>
+            <span className="text-accent-yellow">B</span>
+          </span>
         </Link>
-        <p className="text-xs text-sidebar-foreground/70">
+        <p className="text-xs text-sidebar-foreground/70 group-data-[collapsible=icon]:hidden">
           {ROLES[role].label}
         </p>
       </SidebarHeader>
@@ -133,12 +137,12 @@ export function AppSidebar({ role, userName, hasOrg = true }: AppSidebarProps) {
       </SidebarContent>
       <SidebarFooter className="border-t border-sidebar-border p-4">
         <Link href="/dashboard/profile" className="flex items-center gap-3">
-          <Avatar className="h-8 w-8">
+          <Avatar className="h-8 w-8 shrink-0">
             <AvatarFallback className="bg-sidebar-accent text-sidebar-accent-foreground text-xs">
               {initials || "U"}
             </AvatarFallback>
           </Avatar>
-          <div className="flex flex-col">
+          <div className="flex flex-col group-data-[collapsible=icon]:hidden">
             <span className="text-sm font-medium text-sidebar-foreground">
               {userName || "User"}
             </span>
