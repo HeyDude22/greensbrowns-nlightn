@@ -4,8 +4,10 @@ import { Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { EmailPasswordForm } from "@/components/auth/email-password-form";
 import { EmailLoginForm } from "@/components/auth/email-login-form";
+import { HelpCircle } from "lucide-react";
 import Link from "next/link";
 
 function LoginContent() {
@@ -31,7 +33,19 @@ function LoginContent() {
         <Tabs defaultValue="password" className="w-full">
           <TabsList className="grid w-full grid-cols-2">
             <TabsTrigger value="password">Email &amp; Password</TabsTrigger>
-            <TabsTrigger value="magic-link">Magic Link</TabsTrigger>
+            <TabsTrigger value="magic-link" className="gap-1">
+              Magic Link
+              <TooltipProvider>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <HelpCircle className="h-3.5 w-3.5 text-muted-foreground" />
+                  </TooltipTrigger>
+                  <TooltipContent side="bottom">
+                    <p>We&apos;ll email you a one-click login link — no password needed</p>
+                  </TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
+            </TabsTrigger>
           </TabsList>
           <TabsContent value="password" className="mt-4">
             <EmailPasswordForm />

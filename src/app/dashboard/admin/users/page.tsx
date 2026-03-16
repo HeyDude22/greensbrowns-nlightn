@@ -94,18 +94,23 @@ export default function AdminUsersPage() {
                       </Badge>
                     </TableCell>
                     <TableCell>
-                      <Badge
-                        variant="secondary"
-                        className={KYC_STATUS_COLORS[profile.kyc_status]}
-                      >
-                        {profile.kyc_status}
-                      </Badge>
+                      {(profile.role === "collector" || profile.role === "farmer") ? (
+                        <Badge
+                          variant="secondary"
+                          className={KYC_STATUS_COLORS[profile.kyc_status]}
+                        >
+                          {profile.kyc_status}
+                        </Badge>
+                      ) : (
+                        <span className="text-muted-foreground text-sm">N/A</span>
+                      )}
                     </TableCell>
                     <TableCell>
                       {new Date(profile.created_at).toLocaleDateString()}
                     </TableCell>
                     <TableCell>
-                      {profile.kyc_status === "submitted" && (
+                      {(profile.role === "collector" || profile.role === "farmer") &&
+                        profile.kyc_status === "submitted" && (
                         <Button
                           size="sm"
                           variant="outline"

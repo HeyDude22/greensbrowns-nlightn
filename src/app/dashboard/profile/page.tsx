@@ -118,12 +118,14 @@ export default function ProfilePage() {
           </CardContent>
         </Card>
 
-        <KycUploadForm
-          userId={user.id}
-          currentStatus={kycStatus}
-          kycNotes={profile.kyc_notes}
-          onStatusChange={setKycStatus}
-        />
+        {(profile.role === "collector" || profile.role === "farmer") && (
+          <KycUploadForm
+            userId={user.id}
+            currentStatus={kycStatus}
+            kycNotes={profile.kyc_notes}
+            onStatusChange={setKycStatus}
+          />
+        )}
       </div>
     );
   }

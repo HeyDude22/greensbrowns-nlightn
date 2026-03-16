@@ -39,6 +39,8 @@ import { DashboardSkeleton } from "@/components/shared/loading-skeleton";
 import {
   JOB_STATUS_LABELS,
   JOB_STATUS_COLORS,
+  PICKUP_STATUS_LABELS,
+  PICKUP_STATUS_COLORS,
   VEHICLE_TYPE_LABELS,
   GREEN_WASTE_DENSITY_KG_PER_M3,
 } from "@/lib/constants";
@@ -55,7 +57,7 @@ import {
   IndianRupee,
 } from "lucide-react";
 import Link from "next/link";
-import type { JobStatus, VehicleType } from "@/types";
+import type { JobStatus, PickupStatus, VehicleType } from "@/types";
 import { toast } from "sonner";
 import {
   optimizeJobs,
@@ -86,6 +88,7 @@ interface JobRow {
   drivers: { name: string } | null;
   profiles: { full_name: string | null } | null;
   job_pickups: { count: number }[] | null;
+  latest_pickup_status: PickupStatus | null;
 }
 
 interface RateRow {
@@ -163,6 +166,12 @@ export default function AdminJobsPage() {
   const [optimizing, setOptimizing] = useState(false);
   const [editingDraftJob, setEditingDraftJob] = useState<JobRow | null>(null);
 
+  // Pickup status progression order for determining "most advanced"
+  const PICKUP_STATUS_ORDER: PickupStatus[] = [
+    "requested", "verified", "assigned", "picked_up", "in_transit",
+    "delivered", "received", "processed", "rejected", "cancelled",
+  ];
+
   const fetchJobs = useCallback(async () => {
     const { data } = await supabase
       .from("jobs")
@@ -171,7 +180,38 @@ export default function AdminJobsPage() {
       )
       .order("created_at", { ascending: false });
 
-    if (data) setJobs(data as unknown as JobRow[]);
+    if (!data) {
+      setLoading(false);
+      return;
+    }
+
+    // Fetch pickup statuses for all jobs via job_pickups
+    const jobIds = data.map((j) => j.id);
+    const { data: jpData } = jobIds.length > 0
+      ? await supabase
+          .from("job_pickups")
+          .select("job_id, pickups(status)")
+          .in("job_id", jobIds)
+      : { data: null };
+
+    // Build a map of job_id -> most advanced pickup status
+    const pickupStatusMap = new Map<string, PickupStatus>();
+    for (const jp of (jpData ?? []) as unknown as { job_id: string; pickups: { status: PickupStatus } | null }[]) {
+      if (!jp.pickups?.status) continue;
+      const current = pickupStatusMap.get(jp.job_id);
+      const currentIdx = current ? PICKUP_STATUS_ORDER.indexOf(current) : -1;
+      const newIdx = PICKUP_STATUS_ORDER.indexOf(jp.pickups.status);
+      if (newIdx > currentIdx) {
+        pickupStatusMap.set(jp.job_id, jp.pickups.status);
+      }
+    }
+
+    const jobsWithPickupStatus = data.map((j) => ({
+      ...j,
+      latest_pickup_status: pickupStatusMap.get(j.id) ?? null,
+    }));
+
+    setJobs(jobsWithPickupStatus as unknown as JobRow[]);
     setLoading(false);
   }, [supabase]);
 
@@ -453,12 +493,22 @@ export default function AdminJobsPage() {
                       )}
                     </TableCell>
                     <TableCell>
-                      <Badge
-                        variant="secondary"
-                        className={JOB_STATUS_COLORS[job.status]}
-                      >
-                        {JOB_STATUS_LABELS[job.status]}
-                      </Badge>
+                      <div className="flex flex-col gap-1">
+                        <Badge
+                          variant="secondary"
+                          className={JOB_STATUS_COLORS[job.status]}
+                        >
+                          {JOB_STATUS_LABELS[job.status]}
+                        </Badge>
+                        {job.latest_pickup_status && (
+                          <Badge
+                            variant="outline"
+                            className={`text-[10px] px-1.5 py-0 ${PICKUP_STATUS_COLORS[job.latest_pickup_status]}`}
+                          >
+                            {PICKUP_STATUS_LABELS[job.latest_pickup_status]}
+                          </Badge>
+                        )}
+                      </div>
                     </TableCell>
                     <TableCell>
                       <Button

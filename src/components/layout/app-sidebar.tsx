@@ -138,7 +138,7 @@ export function AppSidebar({ role, userName, hasOrg = true }: AppSidebarProps) {
         ) : null}
       </SidebarContent>
       <SidebarFooter className="border-t border-sidebar-border p-4">
-        <Link href="/dashboard/profile" className="flex items-center gap-3">
+        <div className="flex items-center gap-3">
           <Avatar className="h-8 w-8 shrink-0">
             <AvatarFallback className="bg-sidebar-accent text-sidebar-accent-foreground text-xs">
               {initials || "U"}
@@ -148,11 +148,8 @@ export function AppSidebar({ role, userName, hasOrg = true }: AppSidebarProps) {
             <span className="text-sm font-medium text-sidebar-foreground">
               {userName || "User"}
             </span>
-            <span className="text-xs text-sidebar-foreground/70">
-              View Profile
-            </span>
           </div>
-        </Link>
+        </div>
       </SidebarFooter>
     </Sidebar>
   );

@@ -14,6 +14,7 @@ import { PickupTimeline } from "@/components/shared/pickup-timeline";
 import { ArrowLeft, CheckCircle, FileText } from "lucide-react";
 import { toast } from "sonner";
 import Link from "next/link";
+import { RatingDisplay } from "@/components/shared/rating-form";
 import type { Pickup, PickupEvent, PickupTrip } from "@/types";
 
 export default function AdminPickupDetailPage() {
@@ -31,6 +32,7 @@ export default function AdminPickupDetailPage() {
   const [markingDelivered, setMarkingDelivered] = useState(false);
   const [generatingManifest, setGeneratingManifest] = useState(false);
   const [markingProcessed, setMarkingProcessed] = useState(false);
+  const [ratings, setRatings] = useState<{ id: string; rating: number; comment: string | null; role: string; created_at: string }[]>([]);
 
   const refetchEvents = useCallback(async () => {
     const { data: eventsData } = await supabase
@@ -160,6 +162,14 @@ export default function AdminPickupDetailPage() {
         .order("trip_number", { ascending: true });
       if (tripsData) setTrips(tripsData as unknown as PickupTrip[]);
 
+      // Fetch ratings
+      const { data: ratingsData } = await supabase
+        .from("pickup_ratings")
+        .select("id, rating, comment, role, created_at")
+        .eq("pickup_id", id)
+        .order("created_at", { ascending: true });
+      if (ratingsData) setRatings(ratingsData);
+
       setLoading(false);
     }
     fetchData();
@@ -287,6 +297,8 @@ export default function AdminPickupDetailPage() {
       </div>
 
       <TripCard trips={trips} showGeoData={true} />
+
+      <RatingDisplay ratings={ratings} />
 
       <div className="flex gap-3 justify-end">
         {pickup.status === "picked_up" && (

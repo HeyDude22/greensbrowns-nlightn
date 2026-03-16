@@ -105,13 +105,6 @@ export default function BwgPickupsPage() {
               icon={Truck}
               title="No pickups yet"
               description="Schedule your first waste pickup to get started."
-              action={
-                <Button asChild>
-                  <Link href="/dashboard/bwg/pickups/new">
-                    <Plus className="mr-2 h-4 w-4" /> Schedule Pickup
-                  </Link>
-                </Button>
-              }
             />
           </CardContent>
         </Card>

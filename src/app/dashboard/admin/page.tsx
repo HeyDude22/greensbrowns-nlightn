@@ -349,7 +349,10 @@ export default function AdminDashboard() {
                 const pct = Math.max(count / total * 100, 8);
                 return (
                   <div key={status} className="flex items-center gap-1 flex-1">
-                    <div className="flex flex-col items-center gap-1.5 flex-1 min-w-[70px]">
+                    <Link
+                      href={`/dashboard/admin/pickups?status=${status}`}
+                      className="flex flex-col items-center gap-1.5 flex-1 min-w-[70px] rounded-md p-2 -m-2 hover:bg-muted/50 transition-colors"
+                    >
                       <div className="text-xl font-bold tabular-nums">{count}</div>
                       <div
                         className={`w-full h-2 rounded-full ${PICKUP_STATUS_COLORS[status].replace('text-', 'bg-').split(' ')[0]}`}
@@ -358,7 +361,7 @@ export default function AdminDashboard() {
                       <span className="text-[10px] text-muted-foreground whitespace-nowrap font-medium uppercase tracking-wide">
                         {PICKUP_STATUS_LABELS[status]}
                       </span>
-                    </div>
+                    </Link>
                     {i < PIPELINE_STATUSES.length - 1 && (
                       <ArrowRight className="h-3 w-3 text-muted-foreground/40 shrink-0 mx-0.5" />
                     )}

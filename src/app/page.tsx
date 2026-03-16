@@ -48,8 +48,8 @@ export default function LandingPage() {
             </h1>
 
             <p className="mt-8 text-lg sm:text-xl text-muted-foreground max-w-2xl leading-relaxed">
-              We connect apartments and tech parks with farmers who need organic waste for composting.
-              Verified pickups, real-time tracking, and complete compliance — from your building&apos;s garden to the farmer&apos;s field.
+              We connect apartments and tech parks with processors who need organic waste for composting.
+              Verified pickups, real-time tracking, and complete compliance — from your building&apos;s garden to the processor&apos;s facility.
             </p>
 
             <div className="mt-10 flex flex-col sm:flex-row gap-4">
@@ -74,7 +74,7 @@ export default function LandingPage() {
             {[
               { value: "22+", label: "Partner Communities" },
               { value: "14", label: "Vehicles in Fleet" },
-              { value: "3", label: "Active Farmers" },
+              { value: "3", label: "Active Processors" },
               { value: "100%", label: "Trackable Waste" },
             ].map((stat) => (
               <div key={stat.label} className="text-center px-4">
@@ -118,8 +118,8 @@ export default function LandingPage() {
               {
                 step: "03",
                 icon: Sprout,
-                title: "Farmer Receives",
-                description: "Organic waste is delivered directly to a verified farmer. They confirm receipt, and the waste becomes compost — closing the loop.",
+                title: "Processor Receives",
+                description: "Organic waste is delivered directly to a verified processor. They confirm receipt, and the waste becomes compost — closing the loop.",
                 color: "bg-accent-yellow",
               },
             ].map((item, i) => (
@@ -218,7 +218,7 @@ export default function LandingPage() {
               <div className="w-14 h-14 rounded-xl bg-accent-yellow/10 flex items-center justify-center mb-6">
                 <Sprout className="h-7 w-7 text-accent-yellow" />
               </div>
-              <h3 className="text-xl font-semibold">Farmers</h3>
+              <h3 className="text-xl font-semibold">Processors</h3>
               <p className="text-sm text-muted-foreground mt-1 mb-4">Organic compost producers</p>
               <ul className="space-y-2.5 text-sm text-muted-foreground">
                 <li className="flex items-start gap-2">
@@ -239,7 +239,7 @@ export default function LandingPage() {
                 </li>
               </ul>
               <Button variant="outline" size="sm" className="mt-6 w-full border-accent-yellow/30 text-accent-yellow hover:bg-accent-yellow/5" asChild>
-                <Link href="/login">Farmer Login <ArrowRight className="ml-2 h-3 w-3" /></Link>
+                <Link href="/login">Processor Login <ArrowRight className="ml-2 h-3 w-3" /></Link>
               </Button>
             </div>
           </div>
@@ -257,7 +257,7 @@ export default function LandingPage() {
               </h2>
               <p className="mt-6 text-lg text-muted-foreground leading-relaxed">
                 Most of it ends up in landfills or is burned — polluting groundwater and air.
-                Meanwhile, farmers around the city spend money on chemical fertilizers when they could be using free organic compost.
+                Meanwhile, processors around the city spend money on chemical fertilizers when they could be using free organic compost.
               </p>
               <p className="mt-4 text-lg text-muted-foreground leading-relaxed">
                 GreensBrowns bridges this gap with technology — connecting the people who generate green waste with the people who need it most.
@@ -266,7 +266,7 @@ export default function LandingPage() {
             <div className="grid grid-cols-2 gap-4">
               {[
                 { icon: "🏗️", label: "Reduces landfill burden", detail: "Every pickup diverts waste from already-overflowing landfills" },
-                { icon: "🌱", label: "Free compost for farmers", detail: "Quality organic input at zero cost for local agriculture" },
+                { icon: "🌱", label: "Free compost for processors", detail: "Quality organic input at zero cost for local agriculture" },
                 { icon: "📋", label: "BBMP compliance", detail: "Automated manifests and reports for regulatory requirements" },
                 { icon: "🔄", label: "Circular economy", detail: "Waste becomes a resource in a transparent, tracked loop" },
               ].map((item) => (
@@ -293,7 +293,7 @@ export default function LandingPage() {
             Ready to close the loop?
           </h2>
           <p className="mt-4 text-white/80 text-lg max-w-xl mx-auto">
-            Join Bengaluru&apos;s growing network of responsible communities, collectors, and farmers.
+            Join Bengaluru&apos;s growing network of responsible communities, collectors, and processors.
           </p>
           <div className="mt-10 flex flex-col sm:flex-row gap-4 justify-center">
             <Button size="lg" variant="secondary" className="text-base px-8 h-12 bg-white text-forest hover:bg-white/90" asChild>

@@ -16,6 +16,7 @@ import { ArrowLeft, XCircle } from "lucide-react";
 import { toast } from "sonner";
 import Link from "next/link";
 import { TripCard } from "@/components/shared/trip-card";
+import { RatingForm, RatingDisplay } from "@/components/shared/rating-form";
 import type { Pickup, PickupEvent, PickupTrip } from "@/types";
 
 export default function PickupDetailPage() {
@@ -30,6 +31,8 @@ export default function PickupDetailPage() {
   const [trips, setTrips] = useState<PickupTrip[]>([]);
   const [loading, setLoading] = useState(true);
   const [cancelling, setCancelling] = useState(false);
+  const [ratings, setRatings] = useState<{ id: string; rating: number; comment: string | null; role: string; created_at: string }[]>([]);
+  const [hasUserRated, setHasUserRated] = useState(false);
 
   const refetchTrips = useCallback(async () => {
     const { data } = await supabase
@@ -149,6 +152,17 @@ export default function PickupDetailPage() {
         .order("trip_number", { ascending: true });
       if (tripsData) setTrips(tripsData as unknown as PickupTrip[]);
 
+      // Fetch ratings
+      const { data: ratingsData } = await supabase
+        .from("pickup_ratings")
+        .select("id, rating, comment, role, created_at, rated_by")
+        .eq("pickup_id", id)
+        .order("created_at", { ascending: true });
+      if (ratingsData) {
+        setRatings(ratingsData);
+        setHasUserRated(ratingsData.some((r) => r.rated_by === user!.id));
+      }
+
       setLoading(false);
     }
     fetchData();
@@ -250,6 +264,25 @@ export default function PickupDetailPage() {
         )}
 
       <TripCard trips={trips} />
+
+      <RatingDisplay ratings={ratings} />
+
+      {["delivered", "received", "processed"].includes(pickup.status) && !hasUserRated && user && (
+        <RatingForm
+          pickupId={pickup.id}
+          userId={user.id}
+          role="bwg"
+          onSubmitted={async () => {
+            setHasUserRated(true);
+            const { data } = await supabase
+              .from("pickup_ratings")
+              .select("id, rating, comment, role, created_at")
+              .eq("pickup_id", id)
+              .order("created_at", { ascending: true });
+            if (data) setRatings(data);
+          }}
+        />
+      )}
 
       {pickup.status === "requested" && (
         <div className="flex justify-end">

@@ -39,7 +39,7 @@ import {
   PREPAID_STATUS_COLORS,
 } from "@/lib/constants";
 import { Textarea } from "@/components/ui/textarea";
-import { Building2, Package, ChevronDown, ChevronRight, CreditCard, Check, X, Plus } from "lucide-react";
+import { Building2, Package, ChevronDown, ChevronRight, CreditCard, Check, X, Plus, FileText, Upload, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { formatPaise } from "@/lib/utils";
 import type { PrepaidPackageStatus } from "@/types";
@@ -136,6 +136,14 @@ export default function AdminOrganizationsPage() {
     lat: null as number | null,
     lng: null as number | null,
   });
+
+  // Org detail/activation dialog state
+  const [detailOrg, setDetailOrg] = useState<OrgWithCounts | null>(null);
+  const [detailDialogOpen, setDetailDialogOpen] = useState(false);
+  const [contractUrl, setContractUrl] = useState<string | null>(null);
+  const [poUrl, setPoUrl] = useState<string | null>(null);
+  const [uploadingContract, setUploadingContract] = useState(false);
+  const [uploadingPo, setUploadingPo] = useState(false);
 
   // Purchased packages (prepaid) state
   const [packages, setPackages] = useState<PrepaidWithDetails[]>([]);
@@ -273,6 +281,20 @@ export default function AdminOrganizationsPage() {
     const pricePaise = Math.round(priceFloat * 100);
 
     setSubmitting(true);
+
+    // Check if org already has an active package
+    const { data: activePackages } = await supabase
+      .from("assigned_packages")
+      .select("id")
+      .eq("organization_id", selectedOrg.id)
+      .eq("is_active", true)
+      .limit(1);
+
+    if (activePackages && activePackages.length > 0) {
+      toast.error("This organization already has an active package.");
+      setSubmitting(false);
+      return;
+    }
 
     const {
       data: { user },
@@ -451,6 +473,67 @@ export default function AdminOrganizationsPage() {
     });
   }
 
+  async function openDetailDialog(org: OrgWithCounts) {
+    setDetailOrg(org);
+    setContractUrl(null);
+    setPoUrl(null);
+    setDetailDialogOpen(true);
+
+    // TODO: Fetch contract_url and po_url from organizations table once columns exist
+    // const { data } = await supabase
+    //   .from("organizations")
+    //   .select("contract_url, po_url")
+    //   .eq("id", org.id)
+    //   .single();
+    // if (data) {
+    //   setContractUrl(data.contract_url);
+    //   setPoUrl(data.po_url);
+    // }
+  }
+
+  async function handleFileUpload(type: "contract" | "po", file: File) {
+    if (!detailOrg) return;
+    if (file.type !== "application/pdf") {
+      toast.error("Only PDF files are accepted");
+      return;
+    }
+
+    const setter = type === "contract" ? setUploadingContract : setUploadingPo;
+    setter(true);
+
+    const fileName = `${detailOrg.id}/${type}-${Date.now()}.pdf`;
+    const { error: uploadError } = await supabase.storage
+      .from("org-documents")
+      .upload(fileName, file, { contentType: "application/pdf" });
+
+    if (uploadError) {
+      toast.error(`Failed to upload ${type} file`);
+      setter(false);
+      return;
+    }
+
+    const { data: urlData } = supabase.storage
+      .from("org-documents")
+      .getPublicUrl(fileName);
+
+    const publicUrl = urlData.publicUrl;
+
+    // TODO: Save URL to organizations table once contract_url / po_url columns exist
+    // await supabase
+    //   .from("organizations")
+    //   .update({ [`${type}_url`]: publicUrl })
+    //   .eq("id", detailOrg.id);
+
+    if (type === "contract") {
+      setContractUrl(publicUrl);
+    } else {
+      setPoUrl(publicUrl);
+    }
+
+    toast.success(`${type === "contract" ? "Contract" : "PO"} uploaded successfully`);
+    setter(false);
+  }
+
   if (loading) return <DashboardSkeleton />;
 
   return (
@@ -525,7 +608,14 @@ export default function AdminOrganizationsPage() {
                               )}
                             </Button>
                           </TableCell>
-                          <TableCell className="font-medium">{org.name}</TableCell>
+                          <TableCell className="font-medium">
+                            <button
+                              className="text-left hover:underline text-blue-600"
+                              onClick={() => openDetailDialog(org)}
+                            >
+                              {org.name}
+                            </button>
+                          </TableCell>
                           <TableCell>
                             <Badge variant="outline">
                               {ORG_TYPE_LABELS[org.org_type] || org.org_type}
@@ -846,6 +936,152 @@ export default function AdminOrganizationsPage() {
             </Button>
             <Button onClick={handleCreateOrg} disabled={creatingOrg}>
               {creatingOrg ? "Creating..." : "Create Organization"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Organization Detail / Activation Dialog */}
+      <Dialog open={detailDialogOpen} onOpenChange={setDetailDialogOpen}>
+        <DialogContent className="max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>{detailOrg?.name}</DialogTitle>
+            <DialogDescription>
+              Organization activation status and document uploads.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 py-2">
+            {/* Activation Status Indicator */}
+            <div className="space-y-2">
+              <Label>Activation Status</Label>
+              <div className="flex items-center gap-3">
+                <Badge
+                  variant="secondary"
+                  className={
+                    contractUrl && poUrl
+                      ? "bg-green-100 text-green-800"
+                      : "bg-amber-100 text-amber-800"
+                  }
+                >
+                  {contractUrl && poUrl ? "Ready to Activate" : "Documents Pending"}
+                </Badge>
+                <span className="text-xs text-muted-foreground">
+                  {contractUrl ? "Contract received" : "Contract missing"} | {poUrl ? "PO received" : "PO missing"}
+                </span>
+              </div>
+            </div>
+
+            {/* Contract Upload */}
+            <div className="space-y-2">
+              <Label>Contract (PDF)</Label>
+              {contractUrl ? (
+                <div className="flex items-center gap-2">
+                  <FileText className="h-4 w-4 text-green-600" />
+                  <a
+                    href={contractUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-sm text-blue-600 hover:underline"
+                  >
+                    View Contract
+                  </a>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="h-6 text-xs"
+                    onClick={() => setContractUrl(null)}
+                  >
+                    Replace
+                  </Button>
+                </div>
+              ) : (
+                <div className="flex items-center gap-2">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={uploadingContract}
+                    onClick={() => {
+                      const input = document.createElement("input");
+                      input.type = "file";
+                      input.accept = "application/pdf";
+                      input.onchange = (e) => {
+                        const file = (e.target as HTMLInputElement).files?.[0];
+                        if (file) handleFileUpload("contract", file);
+                      };
+                      input.click();
+                    }}
+                  >
+                    {uploadingContract ? (
+                      <Loader2 className="mr-1 h-3 w-3 animate-spin" />
+                    ) : (
+                      <Upload className="mr-1 h-3 w-3" />
+                    )}
+                    {uploadingContract ? "Uploading..." : "Upload Contract"}
+                  </Button>
+                </div>
+              )}
+            </div>
+
+            {/* PO Upload */}
+            <div className="space-y-2">
+              <Label>Purchase Order (PDF)</Label>
+              {poUrl ? (
+                <div className="flex items-center gap-2">
+                  <FileText className="h-4 w-4 text-green-600" />
+                  <a
+                    href={poUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-sm text-blue-600 hover:underline"
+                  >
+                    View PO
+                  </a>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="h-6 text-xs"
+                    onClick={() => setPoUrl(null)}
+                  >
+                    Replace
+                  </Button>
+                </div>
+              ) : (
+                <div className="flex items-center gap-2">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={uploadingPo}
+                    onClick={() => {
+                      const input = document.createElement("input");
+                      input.type = "file";
+                      input.accept = "application/pdf";
+                      input.onchange = (e) => {
+                        const file = (e.target as HTMLInputElement).files?.[0];
+                        if (file) handleFileUpload("po", file);
+                      };
+                      input.click();
+                    }}
+                  >
+                    {uploadingPo ? (
+                      <Loader2 className="mr-1 h-3 w-3 animate-spin" />
+                    ) : (
+                      <Upload className="mr-1 h-3 w-3" />
+                    )}
+                    {uploadingPo ? "Uploading..." : "Upload PO"}
+                  </Button>
+                </div>
+              )}
+              <p className="text-xs text-muted-foreground">
+                {/* TODO: Add DB migration to add contract_url and po_url columns to organizations table */}
+                Upload contract and PO documents to activate this organization.
+              </p>
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDetailDialogOpen(false)}>
+              Close
             </Button>
           </DialogFooter>
         </DialogContent>

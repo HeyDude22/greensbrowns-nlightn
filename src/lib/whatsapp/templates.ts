@@ -19,17 +19,24 @@ export function jobAssignedMessage(params: {
   slot: string | null;
   lat: number;
   lng: number;
+  entryInstructions?: string | null;
 }): string {
-  return [
+  const lines = [
     `New job assigned!`,
     ``,
     `Pickup from: ${params.orgName}`,
     `Address: ${params.address}`,
     `Date: ${params.date}`,
     `Slot: ${slotLabel(params.slot)}`,
-    ``,
-    `Location: ${googleMapsLink(params.lat, params.lng)}`,
-  ].join("\n");
+  ];
+
+  if (params.entryInstructions) {
+    lines.push(``, `Entry Instructions: ${params.entryInstructions}`);
+  }
+
+  lines.push(``, `Location: ${googleMapsLink(params.lat, params.lng)}`);
+
+  return lines.join("\n");
 }
 
 export function pickupReminder24hMessage(params: {
@@ -62,7 +69,7 @@ export function pickupReminder1hMessage(params: {
 
 export const PHOTO_PROMPT = "Please send a photo to confirm.";
 
-// --- Farmer messages ---
+// --- Processor messages ---
 
 export function farmerDeliveryIncomingMessage(params: {
   slot: string | null;

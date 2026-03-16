@@ -207,7 +207,7 @@ export default function AdminFarmersPage() {
       return;
     }
 
-    toast.success(editingId ? "Farmer updated" : "Farmer created");
+    toast.success(editingId ? "Processor updated" : "Processor created");
     setDialogOpen(false);
     setSubmitting(false);
     setLoading(true);
@@ -238,7 +238,7 @@ export default function AdminFarmersPage() {
           : f
       )
     );
-    toast.success(newVal ? "Farmer activated" : "Farmer deactivated");
+    toast.success(newVal ? "Processor activated" : "Processor deactivated");
   }
 
   if (loading) return <DashboardSkeleton />;
@@ -246,11 +246,11 @@ export default function AdminFarmersPage() {
   return (
     <div className="space-y-6">
       <PageHeader
-        title="Farmers"
-        description="Manage farmers and farm details"
+        title="Processors"
+        description="Manage processors and facility details"
         action={
           <Button onClick={openCreateDialog}>
-            <Plus className="mr-2 h-4 w-4" /> Add Farmer
+            <Plus className="mr-2 h-4 w-4" /> Add Processor
           </Button>
         }
       />
@@ -260,8 +260,8 @@ export default function AdminFarmersPage() {
           <CardContent className="pt-6">
             <EmptyState
               icon={Sprout}
-              title="No farmers"
-              description="No farmers have been added yet. Click 'Add Farmer' to create one."
+              title="No processors"
+              description="No processors have been added yet. Click 'Add Processor' to create one."
             />
           </CardContent>
         </Card>
@@ -442,7 +442,7 @@ export default function AdminFarmersPage() {
         <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>
-              {editingId ? "Edit Farmer" : "Add Farmer"}
+              {editingId ? "Edit Processor" : "Add Processor"}
             </DialogTitle>
           </DialogHeader>
 
@@ -575,8 +575,8 @@ export default function AdminFarmersPage() {
               {submitting
                 ? "Saving..."
                 : editingId
-                  ? "Update Farmer"
-                  : "Create Farmer"}
+                  ? "Update Processor"
+                  : "Create Processor"}
             </Button>
           </DialogFooter>
         </DialogContent>

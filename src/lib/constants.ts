@@ -30,7 +30,7 @@ export const ROLES: Record<UserRole, { label: string; description: string }> = {
     description: "Licensed waste collectors",
   },
   farmer: {
-    label: "Farmer",
+    label: "Processor",
     description: "Compost & organic farming",
   },
   admin: {
@@ -77,7 +77,7 @@ export const ADMIN_NAV_GROUPS: NavGroup[] = [
       { title: "Pickups", href: "/dashboard/admin/pickups", icon: Truck },
       { title: "Jobs", href: "/dashboard/admin/jobs", icon: ClipboardList },
       { title: "Organizations", href: "/dashboard/admin/organizations", icon: Building2 },
-      { title: "Farmers", href: "/dashboard/admin/farmers", icon: Sprout },
+      { title: "Processors", href: "/dashboard/admin/farmers", icon: Sprout },
       { title: "Reports", href: "/dashboard/admin/reports", icon: BarChart3 },
     ],
   },

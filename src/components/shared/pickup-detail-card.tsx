@@ -1,6 +1,7 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { PICKUP_STATUS_LABELS, PICKUP_STATUS_COLORS } from "@/lib/constants";
+import { Lock } from "lucide-react";
 import type { Pickup } from "@/types";
 
 interface PickupDetailCardProps {
@@ -49,9 +50,16 @@ export function PickupDetailCard({
           <span className="capitalize">{pickup.scheduled_slot || "—"}</span>
         </DetailRow>
         <DetailRow label="Estimated Weight">
-          {pickup.estimated_weight_kg
-            ? `${(Number(pickup.estimated_weight_kg) / 1000).toFixed(2)} tonnes`
-            : "—"}
+          {pickup.estimated_weight_kg ? (
+            <span className="inline-flex items-center gap-1">
+              {(Number(pickup.estimated_weight_kg) / 1000).toFixed(2)} tonnes
+              {pickup.status !== "requested" && (
+                <span title="Weight locked after verification"><Lock className="h-3 w-3 text-amber-600" /></span>
+              )}
+            </span>
+          ) : (
+            "—"
+          )}
         </DetailRow>
         {pickup.actual_weight_kg && (
           <DetailRow label="Actual Weight">

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, useRef } from "react";
+import { useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { useRealtime } from "@/hooks/use-realtime";
 import { Card, CardContent } from "@/components/ui/card";
@@ -31,7 +32,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { Truck, Eye, CheckCircle, ShieldCheck, Plus, Camera, ImagePlus, X, Sparkles, Loader2, CheckCheck, List, Map, HelpCircle } from "lucide-react";
+import { Truck, Eye, CheckCircle, ShieldCheck, Plus, Camera, ImagePlus, X, Sparkles, Loader2, CheckCheck, List, Map, HelpCircle, Lock } from "lucide-react";
 import Link from "next/link";
 import type { PickupStatus, VehicleType } from "@/types";
 import { toast } from "sonner";
@@ -107,6 +108,8 @@ interface PickupWithOrg {
 
 export default function AdminPickupsPage() {
   const supabase = createClient();
+  const searchParams = useSearchParams();
+  const statusFilter = searchParams.get("status") as PickupStatus | null;
   const [pickups, setPickups] = useState<PickupWithOrg[]>([]);
   const [loading, setLoading] = useState(true);
   const [markingDeliveredId, setMarkingDeliveredId] = useState<string | null>(null);
@@ -617,6 +620,10 @@ export default function AdminPickupsPage() {
 
   if (loading) return <DashboardSkeleton />;
 
+  const filteredPickups = statusFilter
+    ? pickups.filter((p) => p.status === statusFilter)
+    : pickups;
+
   return (
     <div className="space-y-6">
       <PageHeader
@@ -665,6 +672,21 @@ export default function AdminPickupsPage() {
           </div>
         }
       />
+
+      {statusFilter && (
+        <div className="flex items-center gap-2">
+          <span className="text-sm text-muted-foreground">Filtered by:</span>
+          <Badge variant="secondary" className={PICKUP_STATUS_COLORS[statusFilter]}>
+            {PICKUP_STATUS_LABELS[statusFilter]}
+          </Badge>
+          <Button variant="ghost" size="sm" asChild>
+            <Link href="/dashboard/admin/pickups">
+              <X className="mr-1 h-3 w-3" />
+              Clear
+            </Link>
+          </Button>
+        </div>
+      )}
 
       {viewMode === "suggest" ? (
         <div className="space-y-4">
@@ -822,13 +844,13 @@ export default function AdminPickupsPage() {
             </Card>
           )}
         </div>
-      ) : pickups.length === 0 ? (
+      ) : filteredPickups.length === 0 ? (
         <Card>
           <CardContent className="pt-6">
             <EmptyState
               icon={Truck}
-              title="No pickups"
-              description="No pickups have been scheduled yet."
+              title={statusFilter ? "No matching pickups" : "No pickups"}
+              description={statusFilter ? `No pickups with status "${PICKUP_STATUS_LABELS[statusFilter]}".` : "No pickups have been scheduled yet."}
             />
           </CardContent>
         </Card>
@@ -849,7 +871,7 @@ export default function AdminPickupsPage() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {pickups.map((pickup) => {
+                {filteredPickups.map((pickup) => {
                   const jobNumbers = pickup.job_pickups
                     ?.map((jp) => jp.jobs?.job_number)
                     .filter(Boolean) as string[] | undefined;
@@ -866,9 +888,16 @@ export default function AdminPickupsPage() {
                         {new Date(pickup.scheduled_date).toLocaleDateString()}
                       </TableCell>
                       <TableCell>
-                        {pickup.estimated_weight_kg
-                          ? `${pickup.estimated_weight_kg} kg`
-                          : "—"}
+                        {pickup.estimated_weight_kg ? (
+                          <span className="inline-flex items-center gap-1">
+                            {pickup.estimated_weight_kg} kg
+                            {pickup.status !== "requested" && (
+                              <span title="Weight locked after verification"><Lock className="h-3 w-3 text-amber-600" /></span>
+                            )}
+                          </span>
+                        ) : (
+                          "—"
+                        )}
                       </TableCell>
                       <TableCell>
                         {pickup.pickup_trips?.[0]?.count ?? 0}

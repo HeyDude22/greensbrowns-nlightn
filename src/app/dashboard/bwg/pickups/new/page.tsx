@@ -77,6 +77,7 @@ export default function SchedulePickupPage() {
   const [scheduledDate, setScheduledDate] = useState("");
   const [scheduledSlot, setScheduledSlot] = useState("morning");
   const [notes, setNotes] = useState("");
+  const [entryInstructions, setEntryInstructions] = useState("");
   const [loadingHelper, setLoadingHelper] = useState(false);
   const [photos, setPhotos] = useState<{ file: File; preview: string }[]>([]);
   const [prepaidPackage, setPrepaidPackage] = useState<{
@@ -87,6 +88,11 @@ export default function SchedulePickupPage() {
   } | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const cameraInputRef = useRef<HTMLInputElement>(null);
+  const [vehicleAvailability, setVehicleAvailability] = useState<{
+    status: "available" | "limited" | "fully_booked" | null;
+    message: string;
+  }>({ status: null, message: "" });
+  const [checkingAvailability, setCheckingAvailability] = useState(false);
   const [minDate] = useState(() => {
     const tomorrow = new Date();
     tomorrow.setDate(tomorrow.getDate() + 1);
@@ -120,6 +126,42 @@ export default function SchedulePickupPage() {
     }
     fetchOrg();
   }, [user, memberOrgId, orgLoading, supabase]);
+
+  async function checkVehicleAvailability(date: string) {
+    if (!date) {
+      setVehicleAvailability({ status: null, message: "" });
+      return;
+    }
+    setCheckingAvailability(true);
+    try {
+      // Count total vehicles
+      const { count: totalVehicles } = await supabase
+        .from("vehicles")
+        .select("id", { count: "exact", head: true });
+
+      // Count vehicles already assigned to pickups on this date
+      const { count: busyVehicles } = await supabase
+        .from("pickups")
+        .select("vehicle_id", { count: "exact", head: true })
+        .eq("scheduled_date", date)
+        .not("vehicle_id", "is", null)
+        .not("status", "in", '("cancelled","delivered","processed")');
+
+      const total = totalVehicles ?? 0;
+      const busy = busyVehicles ?? 0;
+
+      if (total === 0 || busy === 0) {
+        setVehicleAvailability({ status: "available", message: "Vehicles available" });
+      } else if (busy >= total) {
+        setVehicleAvailability({ status: "fully_booked", message: "Fully booked" });
+      } else {
+        setVehicleAvailability({ status: "limited", message: "Limited availability" });
+      }
+    } catch {
+      setVehicleAvailability({ status: null, message: "" });
+    }
+    setCheckingAvailability(false);
+  }
 
   if (orgLoading || loading) return <DashboardSkeleton />;
 
@@ -171,8 +213,8 @@ export default function SchedulePickupPage() {
       toast.error("Pickup date must be from tomorrow onwards");
       return;
     }
-    if (photos.length === 0) {
-      toast.error("Please add at least one photo of the waste");
+    if (photos.length < 2) {
+      toast.error("Please add at least 2 photos of the waste");
       return;
     }
     setSubmitting(true);
@@ -196,6 +238,12 @@ export default function SchedulePickupPage() {
       }
     }
 
+    // Combine notes and entry instructions
+    const combinedNotes = [
+      notes,
+      entryInstructions ? `[Entry Instructions] ${entryInstructions}` : "",
+    ].filter(Boolean).join("\n") || null;
+
     const { data, error } = await supabase
       .from("pickups")
       .insert({
@@ -203,7 +251,7 @@ export default function SchedulePickupPage() {
         requested_by: user.id,
         scheduled_date: scheduledDate,
         scheduled_slot: scheduledSlot,
-        notes: notes || null,
+        notes: combinedNotes,
         loading_helper_required: loadingHelper,
         waste_photo_urls: photoUrls,
         prepaid_package_id: prepaidPackage?.id || null,
@@ -279,13 +327,40 @@ export default function SchedulePickupPage() {
                     if (val && val < minDate) {
                       toast.error("Pickup date must be from tomorrow onwards");
                       setScheduledDate(minDate);
+                      checkVehicleAvailability(minDate);
                     } else {
                       setScheduledDate(val);
+                      checkVehicleAvailability(val);
                     }
                   }}
                   min={minDate}
                   required
+                  className={
+                    vehicleAvailability.status === "available"
+                      ? "border-green-500 focus-visible:ring-green-500"
+                      : vehicleAvailability.status === "limited"
+                      ? "border-amber-500 focus-visible:ring-amber-500"
+                      : vehicleAvailability.status === "fully_booked"
+                      ? "border-red-500 focus-visible:ring-red-500"
+                      : ""
+                  }
                 />
+                {checkingAvailability && (
+                  <p className="text-xs text-muted-foreground">Checking availability...</p>
+                )}
+                {!checkingAvailability && vehicleAvailability.status && (
+                  <p
+                    className={`text-xs font-medium ${
+                      vehicleAvailability.status === "available"
+                        ? "text-green-600"
+                        : vehicleAvailability.status === "limited"
+                        ? "text-amber-600"
+                        : "text-red-600"
+                    }`}
+                  >
+                    {vehicleAvailability.message}
+                  </p>
+                )}
               </div>
               <div className="space-y-2">
                 <Label htmlFor="slot">Time Slot</Label>
@@ -314,7 +389,7 @@ export default function SchedulePickupPage() {
               </Label>
             </div>
             <div className="space-y-2">
-              <Label>Waste Photos (at least 1, up to {MAX_PHOTOS}) <span className="text-destructive">*</span></Label>
+              <Label>Waste Photos (at least 2, up to {MAX_PHOTOS}) <span className="text-destructive">*</span></Label>
               <div className="flex gap-3 flex-wrap">
                 {photos.map((photo, i) => (
                   <div
@@ -377,12 +452,25 @@ export default function SchedulePickupPage() {
               </p>
             </div>
             <div className="space-y-2">
+              <Label htmlFor="entryInstructions">Entry Instructions (optional)</Label>
+              <Textarea
+                id="entryInstructions"
+                value={entryInstructions}
+                onChange={(e) => setEntryInstructions(e.target.value)}
+                placeholder="Which gate to use, security process, contact person..."
+                rows={2}
+              />
+              <p className="text-xs text-muted-foreground">
+                These instructions will be shared with the collector via WhatsApp.
+              </p>
+            </div>
+            <div className="space-y-2">
               <Label htmlFor="notes">Notes (optional)</Label>
               <Textarea
                 id="notes"
                 value={notes}
                 onChange={(e) => setNotes(e.target.value)}
-                placeholder="Any special instructions for the collector..."
+                placeholder="Any other special instructions..."
                 rows={3}
               />
             </div>
