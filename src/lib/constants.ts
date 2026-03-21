@@ -14,7 +14,7 @@ import {
   ClipboardList,
   type LucideIcon,
 } from "lucide-react";
-import type { UserRole, KycStatus, PickupStatus, PrepaidPackageStatus, VehicleType, VehicleDocType, TripStatus, JobStatus } from "@/types/enums";
+import type { UserRole, KycStatus, PickupStatus, PrepaidPackageStatus, VehicleType, VehicleDocType, TripStatus, JobStatus, ProcessorType } from "@/types/enums";
 
 export const APP_NAME = "GreensBrowns";
 export const APP_DESCRIPTION =
@@ -198,6 +198,14 @@ export const JOB_STATUS_COLORS: Record<JobStatus, string> = {
   in_progress: "bg-purple-100 text-purple-800",
   completed: "bg-green-100 text-green-800",
   cancelled: "bg-red-100 text-red-800",
+};
+
+export const PROCESSOR_TYPE_LABELS: Record<ProcessorType, string> = {
+  farmer: "Farmer",
+  biochar: "Biochar Producer",
+  compost_manufacturer: "Compost Manufacturer",
+  mulch_producer: "Mulch Producer",
+  other: "Other",
 };
 
 export const CLUSTER_COLORS = [

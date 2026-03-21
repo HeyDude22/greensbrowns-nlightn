@@ -94,9 +94,9 @@ export default function SchedulePickupPage() {
   }>({ status: null, message: "" });
   const [checkingAvailability, setCheckingAvailability] = useState(false);
   const [minDate] = useState(() => {
-    const tomorrow = new Date();
-    tomorrow.setDate(tomorrow.getDate() + 1);
-    return tomorrow.toISOString().split("T")[0];
+    const dayAfterTomorrow = new Date();
+    dayAfterTomorrow.setDate(dayAfterTomorrow.getDate() + 2);
+    return dayAfterTomorrow.toISOString().split("T")[0];
   });
 
   useEffect(() => {
@@ -210,7 +210,7 @@ export default function SchedulePickupPage() {
     e.preventDefault();
     if (!user || !orgId) return;
     if (scheduledDate < minDate) {
-      toast.error("Pickup date must be from tomorrow onwards");
+      toast.error("Pickup date must be at least 2 days from today");
       return;
     }
     if (photos.length < 2) {
@@ -325,7 +325,7 @@ export default function SchedulePickupPage() {
                   onChange={(e) => {
                     const val = e.target.value;
                     if (val && val < minDate) {
-                      toast.error("Pickup date must be from tomorrow onwards");
+                      toast.error("Pickup date must be at least 2 days from today");
                       setScheduledDate(minDate);
                       checkVehicleAvailability(minDate);
                     } else {

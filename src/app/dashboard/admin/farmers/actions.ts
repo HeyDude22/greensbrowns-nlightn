@@ -12,6 +12,7 @@ interface FarmerFormData {
   land_area_acres?: number;
   capacity_kg_per_month?: number;
   compost_types?: string[];
+  processor_type?: string;
   notes?: string;
 }
 
@@ -44,6 +45,7 @@ export async function createFarmer(data: FarmerFormData) {
     land_area_acres: data.land_area_acres || null,
     capacity_kg_per_month: data.capacity_kg_per_month || null,
     compost_types: data.compost_types || [],
+    processor_type: data.processor_type || "farmer",
     notes: data.notes || null,
   });
 
@@ -84,6 +86,7 @@ export async function updateFarmer(
         land_area_acres: data.land_area_acres || null,
         capacity_kg_per_month: data.capacity_kg_per_month || null,
         compost_types: data.compost_types || [],
+        processor_type: data.processor_type || "farmer",
         notes: data.notes || null,
       },
       { onConflict: "profile_id" }

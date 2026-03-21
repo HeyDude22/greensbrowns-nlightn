@@ -101,6 +101,8 @@ interface PickupWithOrg {
   vehicle_id: string | null;
   farmer_id: string | null;
   waste_photo_urls: string[] | null;
+  photo_before_url: string | null;
+  photo_after_url: string | null;
   organizations: { name: string } | null;
   pickup_trips: { count: number }[] | null;
   job_pickups: { jobs: { job_number: string } | null }[] | null;
@@ -148,9 +150,9 @@ export default function AdminPickupsPage() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const cameraInputRef = useRef<HTMLInputElement>(null);
   const [minDate] = useState(() => {
-    const tomorrow = new Date();
-    tomorrow.setDate(tomorrow.getDate() + 1);
-    return tomorrow.toISOString().split("T")[0];
+    const dayAfterTomorrow = new Date();
+    dayAfterTomorrow.setDate(dayAfterTomorrow.getDate() + 2);
+    return dayAfterTomorrow.toISOString().split("T")[0];
   });
 
   useRealtime({
@@ -182,7 +184,7 @@ export default function AdminPickupsPage() {
     async function fetchData() {
       const { data } = await supabase
         .from("pickups")
-        .select("id, pickup_number, status, scheduled_date, scheduled_slot, estimated_weight_kg, estimated_volume_m3, vehicle_id, farmer_id, waste_photo_urls, organizations(name), pickup_trips(count), job_pickups(jobs(job_number))")
+        .select("id, pickup_number, status, scheduled_date, scheduled_slot, estimated_weight_kg, estimated_volume_m3, vehicle_id, farmer_id, waste_photo_urls, photo_before_url, photo_after_url, organizations(name), pickup_trips(count), job_pickups(jobs(job_number))")
         .order("scheduled_date", { ascending: false });
 
       if (data) setPickups(data as unknown as PickupWithOrg[]);
@@ -312,8 +314,10 @@ export default function AdminPickupsPage() {
     const [pickupResult, farmerResult, rateResult, vehicleResult, busyResult] = await Promise.all([
       supabase
         .from("pickups")
-        .select("id, pickup_number, estimated_weight_kg, estimated_volume_m3, organizations(name, lat, lng)")
-        .eq("status", "verified"),
+        .select("id, pickup_number, estimated_weight_kg, estimated_volume_m3, scheduled_date, scheduled_slot, organizations(name, lat, lng)")
+        .eq("status", "verified")
+        .lte("scheduled_date", scheduledDate)
+        .order("scheduled_date", { ascending: true }),
       supabase
         .from("profiles")
         .select("id, full_name, farmer_details(farm_lat, farm_lng, is_active)")
@@ -538,7 +542,7 @@ export default function AdminPickupsPage() {
       return;
     }
     if (!scheduleDate || scheduleDate < minDate) {
-      toast.error("Pickup date must be from tomorrow onwards");
+      toast.error("Pickup date must be at least 2 days from today");
       return;
     }
     if (schedulePhotos.length === 0) {
@@ -585,7 +589,7 @@ export default function AdminPickupsPage() {
         loading_helper_required: scheduleLoadingHelper,
         waste_photo_urls: photoUrls,
       })
-      .select("id, pickup_number, status, scheduled_date, scheduled_slot, estimated_weight_kg, estimated_volume_m3, vehicle_id, farmer_id, waste_photo_urls, organizations(name), pickup_trips(count), job_pickups(jobs(job_number))")
+      .select("id, pickup_number, status, scheduled_date, scheduled_slot, estimated_weight_kg, estimated_volume_m3, vehicle_id, farmer_id, waste_photo_urls, photo_before_url, photo_after_url, organizations(name), pickup_trips(count), job_pickups(jobs(job_number))")
       .single();
 
     if (error) {
@@ -1014,7 +1018,7 @@ export default function AdminPickupsPage() {
                   onChange={(e) => {
                     const val = e.target.value;
                     if (val && val < minDate) {
-                      toast.error("Pickup date must be from tomorrow onwards");
+                      toast.error("Pickup date must be at least 2 days from today");
                       setScheduleDate(minDate);
                     } else {
                       setScheduleDate(val);
@@ -1146,22 +1150,55 @@ export default function AdminPickupsPage() {
             <div className="text-sm text-muted-foreground">
               Organization: <strong>{verifyingPickup?.organizations?.name ?? "—"}</strong>
             </div>
-            {verifyingPickup?.waste_photo_urls && verifyingPickup.waste_photo_urls.length > 0 && (
-              <div className="space-y-2">
-                <Label>Waste Photos</Label>
-                <div className="flex gap-2 overflow-x-auto">
-                  {verifyingPickup.waste_photo_urls.map((url, i) => (
-                    <a key={i} href={url} target="_blank" rel="noopener noreferrer">
-                      <img
-                        src={url}
-                        alt={`Waste photo ${i + 1}`}
-                        className="h-32 w-32 rounded-md border object-cover hover:opacity-80 transition-opacity"
-                      />
-                    </a>
-                  ))}
+            {(() => {
+              const wastePhotos = verifyingPickup?.waste_photo_urls?.filter(Boolean) ?? [];
+              const beforeUrl = verifyingPickup?.photo_before_url;
+              const afterUrl = verifyingPickup?.photo_after_url;
+              const hasAnyPhotos = wastePhotos.length > 0 || beforeUrl || afterUrl;
+              if (!hasAnyPhotos) {
+                return (
+                  <p className="text-sm text-muted-foreground italic">
+                    No waste photos uploaded for this pickup.
+                  </p>
+                );
+              }
+              return (
+                <div className="space-y-2">
+                  <Label>Photos</Label>
+                  <div className="flex gap-2 overflow-x-auto">
+                    {wastePhotos.map((url, i) => (
+                      <a key={`waste-${i}`} href={url} target="_blank" rel="noopener noreferrer">
+                        <img
+                          src={url}
+                          alt={`Waste photo ${i + 1}`}
+                          className="h-32 w-32 rounded-md border object-cover hover:opacity-80 transition-opacity"
+                        />
+                      </a>
+                    ))}
+                    {beforeUrl && (
+                      <a href={beforeUrl} target="_blank" rel="noopener noreferrer" className="relative">
+                        <img
+                          src={beforeUrl}
+                          alt="Before pickup"
+                          className="h-32 w-32 rounded-md border object-cover hover:opacity-80 transition-opacity"
+                        />
+                        <span className="absolute bottom-1 left-1 bg-black/60 text-white text-[10px] px-1 rounded">Before</span>
+                      </a>
+                    )}
+                    {afterUrl && (
+                      <a href={afterUrl} target="_blank" rel="noopener noreferrer" className="relative">
+                        <img
+                          src={afterUrl}
+                          alt="After pickup"
+                          className="h-32 w-32 rounded-md border object-cover hover:opacity-80 transition-opacity"
+                        />
+                        <span className="absolute bottom-1 left-1 bg-black/60 text-white text-[10px] px-1 rounded">After</span>
+                      </a>
+                    )}
+                  </div>
                 </div>
-              </div>
-            )}
+              );
+            })()}
             <div className="space-y-2">
               <Label htmlFor="verifyWeight">Estimated Weight (kg)</Label>
               <Input

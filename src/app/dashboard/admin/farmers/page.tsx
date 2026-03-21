@@ -28,7 +28,14 @@ import { PageHeader } from "@/components/shared/page-header";
 import { EmptyState } from "@/components/shared/empty-state";
 import { DashboardSkeleton } from "@/components/shared/loading-skeleton";
 import LocationPicker from "@/components/shared/location-picker-dynamic";
-import { COMPOST_TYPE_OPTIONS } from "@/lib/constants";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { COMPOST_TYPE_OPTIONS, PROCESSOR_TYPE_LABELS } from "@/lib/constants";
 import { buildOsmEmbedUrl } from "@/lib/utils";
 import {
   Sprout,
@@ -41,6 +48,7 @@ import {
   ToggleRight,
 } from "lucide-react";
 import { toast } from "sonner";
+import type { ProcessorType } from "@/types/enums";
 import { createFarmer, updateFarmer } from "./actions";
 
 interface FarmerRow {
@@ -57,6 +65,7 @@ interface FarmerRow {
     capacity_kg_per_month: number | null;
     compost_types: string[];
     is_active: boolean;
+    processor_type: ProcessorType | null;
     notes: string | null;
   } | null;
   pickup_count: number;
@@ -72,6 +81,7 @@ interface FormState {
   land_area_acres: string;
   capacity_kg_per_month: string;
   compost_types: string[];
+  processor_type: ProcessorType;
   notes: string;
 }
 
@@ -85,6 +95,7 @@ const emptyForm: FormState = {
   land_area_acres: "",
   capacity_kg_per_month: "",
   compost_types: [],
+  processor_type: "farmer",
   notes: "",
 };
 
@@ -157,6 +168,7 @@ export default function AdminFarmersPage() {
       capacity_kg_per_month:
         farmer.farmer_details?.capacity_kg_per_month?.toString() || "",
       compost_types: farmer.farmer_details?.compost_types || [],
+      processor_type: farmer.farmer_details?.processor_type || "farmer",
       notes: farmer.farmer_details?.notes || "",
     });
     setDialogOpen(true);
@@ -194,6 +206,7 @@ export default function AdminFarmersPage() {
         : undefined,
       compost_types:
         form.compost_types.length > 0 ? form.compost_types : undefined,
+      processor_type: form.processor_type,
       notes: form.notes || undefined,
     };
 
@@ -273,6 +286,7 @@ export default function AdminFarmersPage() {
                 <TableRow>
                   <TableHead className="w-8"></TableHead>
                   <TableHead>Name</TableHead>
+                  <TableHead>Type</TableHead>
                   <TableHead>Phone</TableHead>
                   <TableHead>Farm</TableHead>
                   <TableHead>Capacity (kg/mo)</TableHead>
@@ -306,6 +320,9 @@ export default function AdminFarmersPage() {
                       </TableCell>
                       <TableCell className="font-medium">
                         {farmer.full_name || "\u2014"}
+                      </TableCell>
+                      <TableCell>
+                        {PROCESSOR_TYPE_LABELS[farmer.farmer_details?.processor_type || "farmer"]}
                       </TableCell>
                       <TableCell>{farmer.phone || "\u2014"}</TableCell>
                       <TableCell>
@@ -355,7 +372,7 @@ export default function AdminFarmersPage() {
 
                     {expandedId === farmer.id && (
                       <TableRow>
-                        <TableCell colSpan={9} className="bg-muted/50 p-4">
+                        <TableCell colSpan={10} className="bg-muted/50 p-4">
                           <div className="grid gap-3 text-sm md:grid-cols-2">
                             <div>
                               <span className="text-muted-foreground">
@@ -471,6 +488,28 @@ export default function AdminFarmersPage() {
 
             <div className="space-y-4">
               <h4 className="text-sm font-semibold">Farm Details</h4>
+              <div className="space-y-2">
+                <Label htmlFor="processor_type">Processor Type</Label>
+                <Select
+                  value={form.processor_type}
+                  onValueChange={(value) =>
+                    setForm({ ...form, processor_type: value as ProcessorType })
+                  }
+                >
+                  <SelectTrigger id="processor_type">
+                    <SelectValue placeholder="Select type" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {(Object.entries(PROCESSOR_TYPE_LABELS) as [ProcessorType, string][]).map(
+                      ([value, label]) => (
+                        <SelectItem key={value} value={value}>
+                          {label}
+                        </SelectItem>
+                      )
+                    )}
+                  </SelectContent>
+                </Select>
+              </div>
               <div className="space-y-2">
                 <Label htmlFor="farm_name">Farm Name</Label>
                 <Input

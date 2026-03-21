@@ -243,7 +243,8 @@ export default function AdminJobsPage() {
       supabase
         .from("pickups")
         .select("id, pickup_number, estimated_weight_kg, estimated_volume_m3, organizations(name, lat, lng)")
-        .eq("status", "verified"),
+        .eq("status", "verified")
+        .lte("scheduled_date", scheduledDate),
       supabase
         .from("profiles")
         .select("id, full_name, farmer_details(farm_lat, farm_lng, is_active)")
@@ -1268,15 +1269,20 @@ function CreateJobDialog({
       }
     }
 
+    // Only fetch verified pickups scheduled on or before the selected date (overdue + same day)
     const { data: allPending, error: pendingErr } = await supabase
       .from("pickups")
       .select("id, pickup_number, organization_id, estimated_weight_kg, estimated_volume_m3, scheduled_date, scheduled_slot, organizations(name, address, org_type, lat, lng)")
       .eq("status", "verified")
+      .lte("scheduled_date", scheduledDate)
       .order("scheduled_date", { ascending: true });
 
     if (pendingErr) {
       toast.error("Failed to load pending pickups");
     }
+
+    // Filter nearby pickups to same date constraint
+    nearby = nearby.filter((p) => p.scheduled_date <= scheduledDate);
 
     const nearbyIds = new Set(nearby.map((p) => p.id));
     const other: PendingPickup[] = (allPending ?? [])
@@ -1316,15 +1322,15 @@ function CreateJobDialog({
         }
         nearby = nearby.map((p) => ({ ...p, existing_jobs: jobMap[p.id] ?? [] }));
         const updatedOther = other.map((p) => ({ ...p, existing_jobs: jobMap[p.id] ?? [] }));
-        setOtherPickups(updatedOther);
+        setOtherPickups(sortPickupsByDateAndSlot(updatedOther));
       } else {
-        setOtherPickups(other);
+        setOtherPickups(sortPickupsByDateAndSlot(other));
       }
     } else {
-      setOtherPickups(other);
+      setOtherPickups(sortPickupsByDateAndSlot(other));
     }
 
-    setNearbyPickups(nearby);
+    setNearbyPickups(sortPickupsByDateAndSlot(nearby));
     setLoadingPickups(false);
   }
 
@@ -1677,6 +1683,18 @@ function PickupRow({
       </div>
     </label>
   );
+}
+
+const SLOT_ORDER: Record<string, number> = { morning: 0, afternoon: 1, evening: 2 };
+
+function sortPickupsByDateAndSlot<T extends { scheduled_date: string; scheduled_slot: string | null }>(pickups: T[]): T[] {
+  return [...pickups].sort((a, b) => {
+    const dateCmp = a.scheduled_date.localeCompare(b.scheduled_date);
+    if (dateCmp !== 0) return dateCmp;
+    const slotA = SLOT_ORDER[a.scheduled_slot ?? ""] ?? 3;
+    const slotB = SLOT_ORDER[b.scheduled_slot ?? ""] ?? 3;
+    return slotA - slotB;
+  });
 }
 
 function capitalize(s: string) {

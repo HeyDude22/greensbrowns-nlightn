@@ -12,7 +12,7 @@ import { DashboardSkeleton } from "@/components/shared/loading-skeleton";
 import { PhotoDisplay } from "@/components/shared/photo-display";
 import { PickupDetailCard } from "@/components/shared/pickup-detail-card";
 import { PickupTimeline } from "@/components/shared/pickup-timeline";
-import { ArrowLeft, XCircle } from "lucide-react";
+import { ArrowLeft, Phone, Truck, XCircle } from "lucide-react";
 import { toast } from "sonner";
 import Link from "next/link";
 import { TripCard } from "@/components/shared/trip-card";
@@ -27,6 +27,7 @@ export default function PickupDetailPage() {
   const [pickup, setPickup] = useState<Pickup | null>(null);
   const [events, setEvents] = useState<(PickupEvent & { profile_name?: string })[]>([]);
   const [vehicleRegNumber, setVehicleRegNumber] = useState<string | null>(null);
+  const [driverPhone, setDriverPhone] = useState<string | null>(null);
   const [farmerName, setFarmerName] = useState<string | null>(null);
   const [trips, setTrips] = useState<PickupTrip[]>([]);
   const [loading, setLoading] = useState(true);
@@ -134,6 +135,18 @@ export default function PickupDetailPage() {
           .eq("id", pickupData.vehicle_id)
           .single();
         if (data) setVehicleRegNumber(data.registration_number);
+
+        // Fetch driver phone via vehicle_drivers
+        const { data: vdData } = await supabase
+          .from("vehicle_drivers")
+          .select("drivers(phone)")
+          .eq("vehicle_id", pickupData.vehicle_id)
+          .limit(1)
+          .maybeSingle();
+        if (vdData) {
+          const driver = vdData.drivers as unknown as { phone: string } | null;
+          if (driver?.phone) setDriverPhone(driver.phone);
+        }
       }
       if (pickupData.farmer_id) {
         const { data } = await supabase
@@ -230,6 +243,32 @@ export default function PickupDetailPage() {
         />
         <PickupTimeline events={events} />
       </div>
+
+      {pickup.vehicle_id && (vehicleRegNumber || driverPhone) && (
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-base">Collector Details</CardTitle>
+          </CardHeader>
+          <CardContent className="flex flex-col gap-2">
+            {vehicleRegNumber && (
+              <div className="flex items-center gap-2 text-sm">
+                <Truck className="h-4 w-4 text-muted-foreground" />
+                <span className="text-muted-foreground">Vehicle:</span>
+                <span className="font-medium">{vehicleRegNumber}</span>
+              </div>
+            )}
+            {driverPhone && (
+              <div className="flex items-center gap-2 text-sm">
+                <Phone className="h-4 w-4 text-muted-foreground" />
+                <span className="text-muted-foreground">Driver:</span>
+                <a href={`tel:${driverPhone}`} className="font-medium text-primary underline">
+                  {driverPhone}
+                </a>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
 
       <PhotoDisplay
         beforeUrl={pickup.photo_before_url}
