@@ -298,9 +298,21 @@ CREATE POLICY "Admins can view all profiles"
 -- Organizations policies
 CREATE POLICY "Org members can view their organization"
   ON organizations FOR SELECT
+  TO authenticated
   USING (
     id IN (
       SELECT organization_id FROM organization_members WHERE user_id = auth.uid()
+    )
+  );
+
+-- BWG onboarding: allow INSERT … RETURNING before organization_members row exists
+CREATE POLICY "Authenticated users can view orgs without members"
+  ON organizations FOR SELECT
+  TO authenticated
+  USING (
+    NOT EXISTS (
+      SELECT 1 FROM organization_members om
+      WHERE om.organization_id = organizations.id
     )
   );
 
@@ -311,12 +323,8 @@ CREATE POLICY "Admins can manage all organizations"
 -- Organization Members policies
 CREATE POLICY "Members can view own org memberships"
   ON organization_members FOR SELECT
-  USING (
-    user_id = auth.uid()
-    OR organization_id IN (
-      SELECT organization_id FROM organization_members WHERE user_id = auth.uid()
-    )
-  );
+  TO authenticated
+  USING (user_id = auth.uid());
 
 CREATE POLICY "Admins can manage all memberships"
   ON organization_members FOR ALL

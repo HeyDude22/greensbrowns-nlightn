@@ -28,18 +28,18 @@ RETURNS TABLE (
          o.name, o.address, o.org_type::text,
          o.lat, o.lng,
          ST_Distance(
-           ST_MakePoint(o.lng, o.lat)::geography,
-           ST_MakePoint(center_lng, center_lat)::geography
+           ST_MakePoint(o.lng, o.lat)::extensions.geography,
+           ST_MakePoint(center_lng, center_lat)::extensions.geography
          ) / 1000.0 AS distance_km
   FROM public.pickups p
   JOIN public.organizations o ON o.id = p.organization_id
   WHERE p.status = 'verified'
     AND o.lat IS NOT NULL AND o.lng IS NOT NULL
     AND ST_DWithin(
-      ST_MakePoint(o.lng, o.lat)::geography,
-      ST_MakePoint(center_lng, center_lat)::geography,
+      ST_MakePoint(o.lng, o.lat)::extensions.geography,
+      ST_MakePoint(center_lng, center_lat)::extensions.geography,
       radius_km * 1000
     )
   ORDER BY distance_km;
 $$ LANGUAGE sql STABLE SECURITY DEFINER
-SET search_path = public;
+SET search_path = public, extensions;
