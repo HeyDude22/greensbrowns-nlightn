@@ -158,6 +158,12 @@ async function handleCollectorPhoto(
 
   // If picked_up, notify farmer with ETA
   if (newStatus === "picked_up" && pickup.farmer_id) {
+    console.log("[ETA] picked_up transition", {
+      pickupId: pickup.id,
+      farmerId: pickup.farmer_id,
+      organizationId: pickup.organization_id,
+      vehicleId: pickup.vehicle_id,
+    });
     await notifyFarmerETA(pickup);
   }
 
@@ -179,7 +185,17 @@ async function notifyFarmerETA(pickup: {
   vehicle_id: string | null;
   estimated_weight_kg: number | null;
 }) {
-  if (!pickup.farmer_id) return;
+  console.log("[ETA] notifyFarmerETA start", {
+    pickupId: pickup.id,
+    farmerId: pickup.farmer_id,
+    organizationId: pickup.organization_id,
+    vehicleId: pickup.vehicle_id,
+  });
+
+  if (!pickup.farmer_id) {
+    console.warn("[ETA] skip: missing farmer_id", { pickupId: pickup.id });
+    return;
+  }
 
   const [farmerResult, orgResult, vehicleResult] = await Promise.all([
     supabase
@@ -205,9 +221,37 @@ async function notifyFarmerETA(pickup: {
   const org = orgResult.data;
   const vehicle = vehicleResult.data;
 
-  if (!farmer?.farm_lat || !farmer?.farm_lng || !org?.lat || !org?.lng) return;
+  console.log("[ETA] query results", {
+    pickupId: pickup.id,
+    farmerResultError: farmerResult.error?.message ?? null,
+    orgResultError: orgResult.error?.message ?? null,
+    vehicleResultError:
+      "error" in vehicleResult
+        ? (vehicleResult as { error?: { message?: string } }).error?.message ?? null
+        : null,
+    farmer,
+    org,
+    vehicle,
+  });
+
+  if (!farmer?.farm_lat || !farmer?.farm_lng || !org?.lat || !org?.lng) {
+    console.warn("[ETA] skip: missing coordinates", {
+      pickupId: pickup.id,
+      farmLat: farmer?.farm_lat ?? null,
+      farmLng: farmer?.farm_lng ?? null,
+      orgLat: org?.lat ?? null,
+      orgLng: org?.lng ?? null,
+    });
+    return;
+  }
 
   const eta = await getETA(org.lat, org.lng, farmer.farm_lat, farmer.farm_lng);
+  console.log("[ETA] distance result", {
+    pickupId: pickup.id,
+    etaMinutes: eta?.durationMinutes ?? null,
+    distanceKm: eta?.distanceKm ?? null,
+    usedFallback30Min: !eta,
+  });
 
   const { data: farmerProfile } = await supabase
     .from("profiles")
@@ -215,14 +259,39 @@ async function notifyFarmerETA(pickup: {
     .eq("id", pickup.farmer_id)
     .single();
 
-  if (!farmerProfile?.phone) return;
+  if (!farmerProfile?.phone) {
+    console.warn("[ETA] skip: missing farmer phone", {
+      pickupId: pickup.id,
+      farmerId: pickup.farmer_id,
+    });
+    return;
+  }
 
   const message = farmerDeliveryETAMessage({
     etaMinutes: eta?.durationMinutes ?? 30,
     regNumber: vehicle?.registration_number ?? "N/A",
   });
 
-  await sendWhatsAppMessage(farmerProfile.phone, message);
+  console.log("[ETA] sending farmer WhatsApp", {
+    pickupId: pickup.id,
+    to: farmerProfile.phone,
+    messagePreview: message.slice(0, 120),
+  });
+
+  const messageId = await sendWhatsAppMessage(farmerProfile.phone, message);
+  if (!messageId) {
+    console.error("[ETA] farmer WhatsApp send failed", {
+      pickupId: pickup.id,
+      to: farmerProfile.phone,
+    });
+    return;
+  }
+
+  console.log("[ETA] farmer WhatsApp sent", {
+    pickupId: pickup.id,
+    to: farmerProfile.phone,
+    messageId,
+  });
 }
 
 async function notifyFarmerConfirmDelivery(farmerId: string) {
