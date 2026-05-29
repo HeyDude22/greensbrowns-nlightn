@@ -42,7 +42,6 @@ export default function BwgPickupsPage() {
 
       if (data) setPickups(data as Pickup[]);
 
-      // Fetch prepaid credits
       const { data: prepaidData } = await supabase
         .from("prepaid_packages")
         .select("pickup_count, used_count")

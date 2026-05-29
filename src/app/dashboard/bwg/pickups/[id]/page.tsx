@@ -183,6 +183,13 @@ export default function PickupDetailPage() {
 
   async function handleCancel() {
     if (!user || !pickup) return;
+    if (pickup.status !== "requested") {
+      toast.error("Only unverified pickups can be cancelled");
+      return;
+    }
+    if (!window.confirm("Cancel this pickup request? This cannot be undone.")) {
+      return;
+    }
     setCancelling(true);
 
     const { error } = await supabase
@@ -227,11 +234,23 @@ export default function PickupDetailPage() {
       <PageHeader
         title={`Pickup ${pickup.pickup_number}`}
         action={
-          <Button variant="outline" asChild>
-            <Link href="/dashboard/bwg/pickups">
-              <ArrowLeft className="mr-2 h-4 w-4" /> Back
-            </Link>
-          </Button>
+          <div className="flex items-center gap-2">
+            {pickup.status === "requested" && (
+              <Button
+                variant="destructive"
+                onClick={handleCancel}
+                disabled={cancelling}
+              >
+                <XCircle className="mr-2 h-4 w-4" />
+                {cancelling ? "Cancelling..." : "Cancel Pickup"}
+              </Button>
+            )}
+            <Button variant="outline" asChild>
+              <Link href="/dashboard/bwg/pickups">
+                <ArrowLeft className="mr-2 h-4 w-4" /> Back
+              </Link>
+            </Button>
+          </div>
         }
       />
 
@@ -323,18 +342,6 @@ export default function PickupDetailPage() {
         />
       )}
 
-      {pickup.status === "requested" && (
-        <div className="flex justify-end">
-          <Button
-            variant="destructive"
-            onClick={handleCancel}
-            disabled={cancelling}
-          >
-            <XCircle className="mr-2 h-4 w-4" />
-            {cancelling ? "Cancelling..." : "Cancel Pickup"}
-          </Button>
-        </div>
-      )}
     </div>
   );
 }

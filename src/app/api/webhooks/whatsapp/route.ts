@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { handleIncomingMessage } from "@/lib/whatsapp/handler";
 import { sendWhatsAppMessage } from "@/lib/whatsapp/client";
+import { transitionPickedUpToInTransit } from "@/lib/pickup-status";
 
 // Meta webhook verification (GET)
 export async function GET(req: NextRequest) {
@@ -71,6 +72,8 @@ export async function POST(req: NextRequest) {
   }
 
   try {
+    await transitionPickedUpToInTransit();
+
     const reply = await handleIncomingMessage({
       From: from,
       Body: textBody || buttonPayload,

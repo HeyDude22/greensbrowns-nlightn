@@ -106,6 +106,9 @@ export const FARMER_CONFIRM_DELIVERY =
 export const FARMER_AUTO_ACCEPTED =
   "No response received. Delivery has been marked as accepted.";
 
+export const FARMER_WASTE_PROCESSED_PROMPT =
+  "Please confirm when you have finished processing the delivered waste.";
+
 // --- BWG email templates ---
 
 export function bwgPickupScheduledHtml(params: {
