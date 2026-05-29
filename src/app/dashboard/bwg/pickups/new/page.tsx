@@ -249,6 +249,7 @@ export default function SchedulePickupPage() {
       .insert({
         organization_id: orgId,
         requested_by: user.id,
+        status: "requested",
         scheduled_date: scheduledDate,
         scheduled_slot: scheduledSlot,
         notes: combinedNotes,

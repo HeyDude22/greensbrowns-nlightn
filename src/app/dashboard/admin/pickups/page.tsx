@@ -583,6 +583,7 @@ export default function AdminPickupsPage() {
       .insert({
         organization_id: scheduleOrgId,
         requested_by: user.id,
+        status: "requested",
         scheduled_date: scheduleDate,
         scheduled_slot: scheduleSlot,
         notes: scheduleNotes || null,

@@ -62,6 +62,11 @@ export async function GET(req: NextRequest) {
 
       if (profile?.phone) {
         await sendWhatsAppMessage(profile.phone, FARMER_AUTO_ACCEPTED);
+        const { sendWhatsAppButtons } = await import("@/lib/whatsapp/client");
+        const { FARMER_WASTE_PROCESSED_PROMPT } = await import("@/lib/whatsapp/templates");
+        await sendWhatsAppButtons(profile.phone, FARMER_WASTE_PROCESSED_PROMPT, [
+          { id: "waste_processed", title: "Waste Processed" },
+        ]);
       }
     }
 
