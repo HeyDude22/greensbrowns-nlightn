@@ -43,6 +43,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { extractLicenseDetails } from "@/lib/ocr";
+import { createDriver, updateDriver } from "./actions";
 import type { Driver, Vehicle } from "@/types";
 
 interface DriverWithVehicles extends Driver {
@@ -175,47 +176,34 @@ export function DriversTab({ drivers, vehicles, fetchDrivers, fetchVehicles }: D
       }
     }
 
+    const driverPayload = {
+      name: driverName.trim(),
+      license_number: driverLicense.trim().toUpperCase(),
+      phone: driverPhone.trim(),
+      license_photo_path: licensePhotoPath,
+      license_valid_till: driverValidTill || null,
+    };
+
     if (editingDriver) {
-      // Update existing driver
-      const { error } = await supabase
-        .from("drivers")
-        .update({
-          name: driverName.trim(),
-          phone: driverPhone.trim(),
-          license_photo_path: licensePhotoPath,
-          license_valid_till: driverValidTill || null,
-        })
-        .eq("id", editingDriver.id);
-
-      if (error) {
-        toast.error("Failed to update driver");
-        console.error(error);
+      const result = await updateDriver(editingDriver.id, driverPayload);
+      if (result.error) {
+        toast.error(result.error);
         setSaving(false);
         return;
       }
-      toast.success("Driver updated");
+      toast.success(
+        result.migrated
+          ? "Driver linked to collector account (auth + profile created)"
+          : "Driver updated"
+      );
     } else {
-      // Upsert new driver by license_number
-      const { error: driverError } = await supabase
-        .from("drivers")
-        .upsert(
-          {
-            name: driverName.trim(),
-            license_number: driverLicense.trim().toUpperCase(),
-            phone: driverPhone.trim(),
-            license_photo_path: licensePhotoPath,
-            license_valid_till: driverValidTill || null,
-          },
-          { onConflict: "license_number" }
-        );
-
-      if (driverError) {
-        toast.error("Failed to add driver");
-        console.error(driverError);
+      const result = await createDriver(driverPayload);
+      if (result.error) {
+        toast.error(result.error);
         setSaving(false);
         return;
       }
-      toast.success("Driver added");
+      toast.success("Driver added with collector login");
     }
 
     setDialogOpen(false);

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { sendJobAssignedNotification, sendBwgPickupEmail } from "@/lib/whatsapp/notifications";
+import { sendJobAssignedNotification, sendBwgPickupWhatsApp } from "@/lib/whatsapp/notifications";
 
 export async function POST(req: NextRequest) {
   try {
@@ -11,7 +11,7 @@ export async function POST(req: NextRequest) {
     await Promise.all(
       pickupIds.flatMap((id) => [
         sendJobAssignedNotification(id),
-        sendBwgPickupEmail(id),
+        sendBwgPickupWhatsApp(id),
       ])
     );
 

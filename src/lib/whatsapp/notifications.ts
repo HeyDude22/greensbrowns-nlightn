@@ -1,17 +1,25 @@
 import { createAdminClient } from "@/lib/supabase/admin";
-import { sendWhatsAppMessage } from "./client";
-import { sendEmail } from "@/lib/email/send";
+import { sendWhatsAppMessage, sendWhatsAppButtons } from "./client";
 import {
   jobAssignedMessage,
   pickupReminder24hMessage,
   pickupReminder1hMessage,
   farmerDeliveryIncomingMessage,
-  bwgPickupScheduledHtml,
-  bwgDeliveryConfirmedHtml,
+  bwgPickupScheduledMessage,
+  bwgDeliveryConfirmedMessage,
+  COLLECTOR_ACTION_PROMPT,
 } from "./templates";
-import { googleMapsLink } from "@/lib/google/distance-matrix";
+import { COLLECTOR_ACTION_BUTTONS } from "./types";
 
 const supabase = createAdminClient();
+
+export async function sendCollectorActionButtons(phone: string, body?: string) {
+  await sendWhatsAppButtons(
+    phone,
+    body ?? COLLECTOR_ACTION_PROMPT,
+    COLLECTOR_ACTION_BUTTONS
+  );
+}
 
 // --- Transporter notifications ---
 
@@ -34,7 +42,6 @@ export async function sendJobAssignedNotification(pickupId: string) {
   };
   if (!org?.lat || !org?.lng) return;
 
-  // Find driver(s) for this vehicle to get their phone
   if (!pickup.vehicle_id) return;
 
   const { data: vehicleDrivers } = await supabase
@@ -57,6 +64,7 @@ export async function sendJobAssignedNotification(pickupId: string) {
     const driver = vd.drivers as unknown as { name: string; phone: string | null };
     if (driver?.phone) {
       await sendWhatsAppMessage(driver.phone, message);
+      await sendCollectorActionButtons(driver.phone);
     }
   }
 }
@@ -71,15 +79,12 @@ export async function sendPickupReminders(type: "24h" | "1h") {
   const now = new Date();
   const targetDate = new Date(now);
 
-  // For 24h reminders, target is tomorrow's slot
-  // For 1h reminders, target is today's slot
   if (type === "24h") {
     targetDate.setDate(targetDate.getDate() + 1);
   }
 
   const dateStr = targetDate.toISOString().split("T")[0];
 
-  // Determine which slot we're reminding for based on current IST hour
   const istHour = (now.getUTCHours() + 5 + (now.getUTCMinutes() + 30 >= 60 ? 1 : 0)) % 24;
   let targetSlot: string | null = null;
 
@@ -110,7 +115,6 @@ export async function sendPickupReminders(type: "24h" | "1h") {
     };
     if (!org?.lat || !org?.lng) continue;
 
-    // Notify transporter
     if (pickup.vehicle_id) {
       const { data: vehicleDrivers } = await supabase
         .from("vehicle_drivers")
@@ -130,11 +134,11 @@ export async function sendPickupReminders(type: "24h" | "1h") {
         const driver = vd.drivers as unknown as { name: string; phone: string | null };
         if (driver?.phone) {
           await sendWhatsAppMessage(driver.phone, message);
+          await sendCollectorActionButtons(driver.phone);
         }
       }
     }
 
-    // Notify farmer (24h only)
     if (type === "24h" && pickup.farmer_id) {
       const { data: farmerProfile } = await supabase
         .from("profiles")
@@ -171,48 +175,75 @@ export async function sendPickupReminders(type: "24h" | "1h") {
   }
 }
 
-// --- BWG email notifications ---
+// --- BWG WhatsApp notifications ---
 
-export async function sendBwgPickupEmail(pickupId: string) {
+async function resolveBwgPhone(pickupId: string): Promise<string | null> {
   const { data: pickup } = await supabase
     .from("pickups")
-    .select("id, scheduled_date, scheduled_slot, requested_by, profiles!pickups_requested_by_fkey(email)")
+    .select(
+      "id, organization_id, profiles!pickups_requested_by_fkey(phone), organizations(contact_phone)"
+    )
+    .eq("id", pickupId)
+    .single();
+
+  if (!pickup) return null;
+
+  const profile = pickup.profiles as unknown as { phone: string | null };
+  const org = pickup.organizations as unknown as { contact_phone: string | null };
+
+  return profile?.phone || org?.contact_phone || null;
+}
+
+export async function sendBwgPickupWhatsApp(pickupId: string) {
+  const { data: pickup } = await supabase
+    .from("pickups")
+    .select("id, scheduled_date, scheduled_slot")
     .eq("id", pickupId)
     .single();
 
   if (!pickup) return;
 
-  const profile = pickup.profiles as unknown as { email: string | null };
-  if (!profile?.email) return;
+  const phone = await resolveBwgPhone(pickupId);
+  if (!phone) {
+    console.warn(`[BWG WhatsApp] No phone for pickup ${pickupId} (profile or org contact)`);
+    return;
+  }
 
-  await sendEmail({
-    to: profile.email,
-    subject: `Pickup Scheduled - ${pickup.scheduled_date}`,
-    html: bwgPickupScheduledHtml({
+  await sendWhatsAppMessage(
+    phone,
+    bwgPickupScheduledMessage({
       date: pickup.scheduled_date,
       slot: pickup.scheduled_slot,
-    }),
-  });
+    })
+  );
 }
 
-export async function sendBwgDeliveryEmail(pickupId: string) {
+export async function sendBwgDeliveryWhatsApp(pickupId: string) {
   const { data: pickup } = await supabase
     .from("pickups")
-    .select("id, scheduled_date, scheduled_slot, requested_by, profiles!pickups_requested_by_fkey(email)")
+    .select("id, scheduled_date, scheduled_slot")
     .eq("id", pickupId)
     .single();
 
   if (!pickup) return;
 
-  const profile = pickup.profiles as unknown as { email: string | null };
-  if (!profile?.email) return;
+  const phone = await resolveBwgPhone(pickupId);
+  if (!phone) {
+    console.warn(`[BWG WhatsApp] No phone for pickup ${pickupId} (profile or org contact)`);
+    return;
+  }
 
-  await sendEmail({
-    to: profile.email,
-    subject: `Delivery Confirmed - ${pickup.scheduled_date}`,
-    html: bwgDeliveryConfirmedHtml({
+  await sendWhatsAppMessage(
+    phone,
+    bwgDeliveryConfirmedMessage({
       date: pickup.scheduled_date,
       slot: pickup.scheduled_slot,
-    }),
-  });
+    })
+  );
 }
+
+/** @deprecated Use sendBwgPickupWhatsApp */
+export const sendBwgPickupEmail = sendBwgPickupWhatsApp;
+
+/** @deprecated Use sendBwgDeliveryWhatsApp */
+export const sendBwgDeliveryEmail = sendBwgDeliveryWhatsApp;

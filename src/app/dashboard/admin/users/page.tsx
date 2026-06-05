@@ -32,7 +32,7 @@ export default function AdminUsersPage() {
       const { data } = await supabase
         .from("profiles")
         .select("*")
-        .neq("role", "farmer")
+        .not("role", "in", '("farmer","collector")')
         .order("created_at", { ascending: false });
 
       if (data) setProfiles(data as Profile[]);
@@ -74,7 +74,7 @@ export default function AdminUsersPage() {
               <TableHeader>
                 <TableRow>
                   <TableHead>Name</TableHead>
-                  <TableHead>Email</TableHead>
+                  <TableHead>Phone</TableHead>
                   <TableHead>Role</TableHead>
                   <TableHead>KYC Status</TableHead>
                   <TableHead>Joined</TableHead>
@@ -87,7 +87,7 @@ export default function AdminUsersPage() {
                     <TableCell className="font-medium">
                       {profile.full_name || "—"}
                     </TableCell>
-                    <TableCell>{profile.email || "—"}</TableCell>
+                    <TableCell>{profile.phone || "—"}</TableCell>
                     <TableCell>
                       <Badge variant="outline">
                         {ROLES[profile.role as UserRole]?.label || profile.role}

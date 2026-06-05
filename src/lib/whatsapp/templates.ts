@@ -69,6 +69,12 @@ export function pickupReminder1hMessage(params: {
 
 export const PHOTO_PROMPT = "Please send a photo to confirm.";
 
+export const COLLECTOR_ACTION_PROMPT =
+  "Tap a button to update your pickup status:";
+
+export const COLLECTOR_DELIVERED_PROMPT =
+  "When you reach the farm, tap Delivered:";
+
 // --- Processor messages ---
 
 export function farmerDeliveryIncomingMessage(params: {
@@ -109,7 +115,34 @@ export const FARMER_AUTO_ACCEPTED =
 export const FARMER_WASTE_PROCESSED_PROMPT =
   "Please confirm when you have finished processing the delivered waste.";
 
-// --- BWG email templates ---
+// --- BWG WhatsApp messages ---
+
+export function bwgPickupScheduledMessage(params: {
+  date: string;
+  slot: string | null;
+}): string {
+  return [
+    "GreensBrowns — Pickup scheduled",
+    `Date: ${params.date}`,
+    `Slot: ${slotLabel(params.slot)}`,
+    "",
+    "A vehicle has been assigned. You will be notified once the waste is delivered.",
+  ].join("\n");
+}
+
+export function bwgDeliveryConfirmedMessage(params: {
+  date: string;
+  slot: string | null;
+}): string {
+  return [
+    "GreensBrowns — Delivery confirmed",
+    `Your waste from the pickup on ${params.date} (${slotLabel(params.slot)}) has been delivered to the composting facility.`,
+    "",
+    "Thank you for contributing to sustainable waste management!",
+  ].join("\n");
+}
+
+// --- BWG email templates (legacy) ---
 
 export function bwgPickupScheduledHtml(params: {
   date: string;

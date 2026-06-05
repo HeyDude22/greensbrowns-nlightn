@@ -790,7 +790,7 @@ function EditDraftJobDialog({
       return;
     }
 
-    toast.success("Draft updated");
+    toast.success(job.status === "draft" ? "Draft updated" : "Job updated");
     setSaving(false);
     onUpdated();
   }
@@ -1057,17 +1057,30 @@ function EditDraftJobDialog({
                       </span>
                     )}
                   </div>
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    onClick={() => handleRemovePickup(jp.id)}
-                  >
-                    <X className="h-3 w-3" />
-                  </Button>
+                  {job.status === "draft" && (
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => handleRemovePickup(jp.id)}
+                    >
+                      <X className="h-3 w-3" />
+                    </Button>
+                  )}
                 </div>
               ))}
             </div>
           </div>
+        )}
+
+        {job.status === "pending" && (
+          <DialogFooter className="flex gap-2 sm:justify-end">
+            <Button variant="outline" onClick={() => onOpenChange(false)}>
+              Close
+            </Button>
+            <Button onClick={handleSave} disabled={saving || loading}>
+              {saving ? "Saving..." : "Save"}
+            </Button>
+          </DialogFooter>
         )}
 
         {job.status === "draft" && (
@@ -1138,6 +1151,8 @@ function CreateJobDialog({
   );
   const [loadingPickups, setLoadingPickups] = useState(false);
   const [creating, setCreating] = useState(false);
+  const [rates, setRates] = useState<RateRow[]>([]);
+  const [distanceKm, setDistanceKm] = useState("");
 
   const selectedVehicleObj = vehicles.find((v) => v.id === selectedVehicle);
   const vehicleDrivers = selectedVehicleObj?.vehicle_drivers ?? [];
@@ -1157,8 +1172,19 @@ function CreateJobDialog({
   const vehicleWeight = selectedVehicleObj?.capacity_kg;
   const tripsByVolume = vehicleVolume ? Math.ceil(selectedVolume / vehicleVolume) : 1;
   const tripsByWeight = vehicleWeight ? Math.ceil(selectedWeight / vehicleWeight) : 1;
-  const estimatedTrips = Math.max(tripsByVolume, tripsByWeight);
+  const estimatedTrips = Math.max(tripsByVolume, tripsByWeight, 1);
   const bottleneck = tripsByVolume > tripsByWeight ? "volume" : tripsByWeight > tripsByVolume ? "weight" : null;
+  const parsedDistanceKm = parseFloat(distanceKm) || 0;
+  const vehicleRate = selectedVehicleObj
+    ? rates.find((r) => r.vehicle_type === selectedVehicleObj.vehicle_type)
+    : undefined;
+  const estimatedCostRs =
+    vehicleRate && parsedDistanceKm > 0
+      ? Math.round(
+          estimatedTrips *
+            (vehicleRate.base_fare_rs + vehicleRate.per_km_rs * parsedDistanceKm),
+        )
+      : null;
 
   // Compute min date (tomorrow) on the client only
   const [minDate, setMinDate] = useState("");
@@ -1184,11 +1210,12 @@ function CreateJobDialog({
     setSelectedPickupIds(new Set());
     setNearbyPickups([]);
     setOtherPickups([]);
+    setDistanceKm("");
 
     async function load() {
       setLoadingOptions(true);
 
-      const [{ data: vehicleData }, { data: farmerData }] = await Promise.all([
+      const [{ data: vehicleData }, { data: farmerData }, { data: rateData }] = await Promise.all([
         supabase
           .from("vehicles")
           .select("id, registration_number, vehicle_type, capacity_kg, volume_capacity_m3, vehicle_drivers(driver_id, drivers(id, name, phone, license_number))")
@@ -1198,6 +1225,7 @@ function CreateJobDialog({
           .from("profiles")
           .select("id, full_name, email, farmer_details(farm_name, farm_address, farm_lat, farm_lng, is_active)")
           .eq("role", "farmer"),
+        supabase.from("vehicle_type_rates").select("vehicle_type, base_fare_rs, per_km_rs"),
       ]);
 
       const withDrivers = (vehicleData ?? []).filter(
@@ -1209,6 +1237,7 @@ function CreateJobDialog({
       setVehicles(withDrivers);
 
       if (farmerData) setFarmers(farmerData as unknown as FarmerOption[]);
+      if (rateData) setRates(rateData as unknown as RateRow[]);
       setLoadingOptions(false);
     }
     load();
@@ -1348,6 +1377,10 @@ function CreateJobDialog({
       toast.error("Select at least one pickup");
       return;
     }
+    if (!distanceKm || parsedDistanceKm <= 0) {
+      toast.error("Please enter the route distance");
+      return;
+    }
 
     setCreating(true);
 
@@ -1358,6 +1391,9 @@ function CreateJobDialog({
       farmerId: selectedFarmer,
       pickupIds: Array.from(selectedPickupIds),
       notes: notes || null,
+      estimatedTrips,
+      estimatedDistanceKm: parsedDistanceKm,
+      totalCostRs: estimatedCostRs,
     });
 
     if ("error" in result) {
@@ -1607,6 +1643,26 @@ function CreateJobDialog({
                   {selectedVehicleObj && (
                     <p className="text-muted-foreground">
                       Estimated trips: <strong>{estimatedTrips}</strong>
+                    </p>
+                  )}
+                  <div className="space-y-1 pt-1">
+                    <Label htmlFor="createJobDistance" className="text-xs">
+                      Distance (km)
+                    </Label>
+                    <Input
+                      id="createJobDistance"
+                      type="number"
+                      min="0"
+                      step="0.1"
+                      value={distanceKm}
+                      onChange={(e) => setDistanceKm(e.target.value)}
+                      placeholder="Enter route distance"
+                      className="bg-white h-8"
+                    />
+                  </div>
+                  {estimatedCostRs != null && (
+                    <p className="text-muted-foreground">
+                      Est. cost: <strong>₹{estimatedCostRs.toLocaleString("en-IN")}</strong>
                     </p>
                   )}
                   {estimatedTrips > 1 && (

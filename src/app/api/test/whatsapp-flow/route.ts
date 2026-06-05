@@ -427,10 +427,10 @@ export async function GET(req: NextRequest) {
 
     // === STEP 2: BWG email on job creation ===
     if (step === "bwg-email" || step === "all") {
-      const { sendBwgPickupEmail } = await import("@/lib/whatsapp/notifications");
+      const { sendBwgPickupWhatsApp } = await import("@/lib/whatsapp/notifications");
       try {
-        await sendBwgPickupEmail(testIds.pickupId!);
-        assert("bwg-pickup-email", true, `Email sent to ${TEST_BWG_EMAIL}`);
+        await sendBwgPickupWhatsApp(testIds.pickupId!);
+        assert("bwg-pickup-whatsapp", true, `WhatsApp sent to BWG phone for ${TEST_BWG_EMAIL}`);
       } catch (e) {
         assert("bwg-pickup-email", false, `Error: ${e}`);
       }
