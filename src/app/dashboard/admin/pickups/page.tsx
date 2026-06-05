@@ -1238,9 +1238,6 @@ export default function AdminPickupsPage() {
                 }}
                 placeholder="Enter volume in m³"
               />
-              <p className="text-xs text-muted-foreground">
-                Auto-calculated at {GREEN_WASTE_DENSITY_KG_PER_M3} kg/m³ — editable
-              </p>
             </div>
           </div>
           <DialogFooter>
