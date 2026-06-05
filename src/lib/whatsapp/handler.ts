@@ -1,13 +1,20 @@
 import { createAdminClient } from "@/lib/supabase/admin";
 import { transitionPickedUpToInTransit } from "@/lib/pickup-status";
-import { sendWhatsAppMessage, downloadMedia } from "./client";
+import { sendWhatsAppMessage, sendWhatsAppButtons, downloadMedia } from "./client";
 import {
   PHOTO_PROMPT,
   FARMER_WASTE_PROCESSED_PROMPT,
+  COLLECTOR_ACTION_PROMPT,
+  COLLECTOR_DELIVERED_PROMPT,
   farmerDeliveryETAMessage,
 } from "./templates";
-import { sendBwgDeliveryEmail } from "./notifications";
+import { sendBwgDeliveryWhatsApp } from "./notifications";
 import { getETA } from "@/lib/google/distance-matrix";
+import type { WhatsAppHandlerReply } from "./types";
+import {
+  COLLECTOR_ACTION_BUTTONS,
+  COLLECTOR_DELIVERED_BUTTON,
+} from "./types";
 
 const supabase = createAdminClient();
 
@@ -21,6 +28,17 @@ interface WebhookMessage {
 }
 
 type CollectorPhotoStage = "assigned" | "in_transit";
+
+function text(message: string): WhatsAppHandlerReply {
+  return { kind: "text", message };
+}
+
+function buttons(
+  message: string,
+  buttonList: { id: string; title: string }[]
+): WhatsAppHandlerReply {
+  return { kind: "buttons", message, buttons: buttonList };
+}
 
 function extractPhone(from: string): string {
   return from.replace("whatsapp:", "").replace("+", "");
@@ -122,7 +140,6 @@ async function notifyFarmerWasteProcessed(farmerId: string) {
 
   if (!profile?.phone) return;
 
-  const { sendWhatsAppButtons } = await import("./client");
   await sendWhatsAppButtons(profile.phone, FARMER_WASTE_PROCESSED_PROMPT, [
     { id: "waste_processed", title: "Waste Processed" },
   ]);
@@ -132,7 +149,7 @@ async function handleCollectorPhoto(
   profileId: string,
   mediaId: string,
   stage: CollectorPhotoStage
-) {
+): Promise<WhatsAppHandlerReply> {
   const newStatus = stage === "assigned" ? "picked_up" : "delivered";
   const photoField =
     newStatus === "picked_up" ? "photo_before_url" : "photo_after_url";
@@ -140,9 +157,11 @@ async function handleCollectorPhoto(
   const pickup = await findPickupForCollectorByStatus(profileId, stage);
   if (!pickup) {
     if (stage === "in_transit") {
-      return "No in-transit delivery found. Wait a few minutes after pickup, then try again.";
+      return text(
+        "No in-transit delivery found. Wait a few minutes after pickup, then try again."
+      );
     }
-    return "No pickup found awaiting your photo.";
+    return text("No pickup found awaiting your photo.");
   }
 
   let photoBuffer: Buffer;
@@ -189,12 +208,31 @@ async function handleCollectorPhoto(
 
   if (newStatus === "delivered" && pickup.farmer_id) {
     await notifyFarmerConfirmDelivery(pickup.farmer_id);
-    await sendBwgDeliveryEmail(pickup.id);
+    await sendBwgDeliveryWhatsApp(pickup.id);
   }
 
-  return newStatus === "picked_up"
-    ? "Pickup confirmed! Status will change to in transit shortly. Tap 'Delivered' when you reach the farm."
-    : "Delivery confirmed! Waiting for farmer to accept.";
+  const { data: collectorProfile } = await supabase
+    .from("profiles")
+    .select("phone")
+    .eq("id", profileId)
+    .single();
+
+  if (newStatus === "picked_up" && collectorProfile?.phone) {
+    await sendWhatsAppButtons(
+      collectorProfile.phone,
+      COLLECTOR_DELIVERED_PROMPT,
+      COLLECTOR_DELIVERED_BUTTON
+    );
+    return text(
+      "Pickup confirmed! Status will change to in transit shortly. Tap Delivered when you reach the farm."
+    );
+  }
+
+  return text(
+    newStatus === "picked_up"
+      ? "Pickup confirmed! Status will change to in transit shortly."
+      : "Delivery confirmed! Waiting for farmer to accept."
+  );
 }
 
 async function notifyFarmerETA(pickup: {
@@ -259,7 +297,6 @@ async function notifyFarmerConfirmDelivery(farmerId: string) {
 
   if (!profile?.phone) return;
 
-  const { sendWhatsAppButtons } = await import("./client");
   await sendWhatsAppButtons(
     profile.phone,
     "Waste has been delivered to your farm. Please confirm:",
@@ -271,9 +308,12 @@ async function notifyFarmerConfirmDelivery(farmerId: string) {
   );
 }
 
-async function handleFarmerResponse(profileId: string, body: string) {
+async function handleFarmerResponse(
+  profileId: string,
+  body: string
+): Promise<WhatsAppHandlerReply> {
   const pickup = await findDeliveredPickupForFarmer(profileId);
-  if (!pickup) return "No pending delivery found.";
+  if (!pickup) return text("No pending delivery found.");
 
   const choice = body.trim().toLowerCase();
 
@@ -303,7 +343,7 @@ async function handleFarmerResponse(profileId: string, body: string) {
     });
 
     await notifyFarmerWasteProcessed(profileId);
-    return "Thank you! Please confirm when you have finished processing the waste.";
+    return text("Thank you! Please confirm when you have finished processing the waste.");
   }
 
   if (rejectionMap[choice]) {
@@ -324,15 +364,19 @@ async function handleFarmerResponse(profileId: string, body: string) {
     });
 
     await notifyFarmerWasteProcessed(profileId);
-    return `Delivery rejected (${rejectionMap[choice].replace("_", " ")}). Please confirm when waste has been processed.`;
+    return text(
+      `Delivery rejected (${rejectionMap[choice].replace("_", " ")}). Please confirm when waste has been processed.`
+    );
   }
 
-  return "Please tap Received or a Reject option to confirm delivery.";
+  return text("Please tap Received or a Reject option to confirm delivery.");
 }
 
-async function handleFarmerWasteProcessed(profileId: string) {
+async function handleFarmerWasteProcessed(
+  profileId: string
+): Promise<WhatsAppHandlerReply> {
   const pickup = await findPickupAwaitingProcessing(profileId);
-  if (!pickup) return "No pickup awaiting waste processing confirmation.";
+  if (!pickup) return text("No pickup awaiting waste processing confirmation.");
 
   await supabase
     .from("pickups")
@@ -346,19 +390,19 @@ async function handleFarmerWasteProcessed(profileId: string) {
     notes: "Farmer confirmed waste processed via WhatsApp",
   });
 
-  return "Thank you! Waste processing has been recorded.";
+  return text("Thank you! Waste processing has been recorded.");
 }
 
 const pendingAction = new Map<string, CollectorPhotoStage>();
 
 export async function handleIncomingMessage(
   body: WebhookMessage
-): Promise<string> {
+): Promise<WhatsAppHandlerReply> {
   const phone = extractPhone(body.From);
   const profile = await findProfileByPhone(phone);
 
   if (!profile) {
-    return "Your phone number is not registered. Please contact admin.";
+    return text("Your phone number is not registered. Please contact admin.");
   }
 
   const hasMedia = parseInt(body.NumMedia || "0") > 0;
@@ -370,9 +414,9 @@ export async function handleIncomingMessage(
 
     if (buttonPayload === "picked_up" || messageBody === "picked up") {
       const pickup = await findPickupForCollectorByStatus(profile.id, "assigned");
-      if (!pickup) return "No assigned pickup found.";
+      if (!pickup) return text("No assigned pickup found.");
       pendingAction.set(phone, "assigned");
-      return PHOTO_PROMPT;
+      return text(PHOTO_PROMPT);
     }
 
     if (buttonPayload === "delivered" || messageBody === "delivered") {
@@ -384,12 +428,14 @@ export async function handleIncomingMessage(
       if (!pickup) {
         const stillPickedUp = await findPickupForCollectorByStatus(profile.id, "picked_up");
         if (stillPickedUp) {
-          return "Pickup is still in transit. Please wait a few minutes after pickup, then tap Delivered again.";
+          return text(
+            "Pickup is still in transit. Please wait a few minutes after pickup, then tap Delivered again."
+          );
         }
-        return "No in-transit delivery found to mark as delivered.";
+        return text("No in-transit delivery found to mark as delivered.");
       }
       pendingAction.set(phone, "in_transit");
-      return PHOTO_PROMPT;
+      return text(PHOTO_PROMPT);
     }
 
     if (hasMedia && body.MediaId) {
@@ -404,14 +450,14 @@ export async function handleIncomingMessage(
         if (inTransit) {
           return handleCollectorPhoto(profile.id, body.MediaId, "in_transit");
         }
-        return "No pickup found awaiting your photo.";
+        return text("No pickup found awaiting your photo.");
       }
 
       pendingAction.delete(phone);
       return handleCollectorPhoto(profile.id, body.MediaId, action);
     }
 
-    return "Reply 'Picked Up' when at the pickup location, or 'Delivered' when you reach the farm.";
+    return buttons(COLLECTOR_ACTION_PROMPT, COLLECTOR_ACTION_BUTTONS);
   }
 
   if (profile.role === "farmer") {
@@ -434,8 +480,8 @@ export async function handleIncomingMessage(
       return handleFarmerResponse(profile.id, input);
     }
 
-    return "Please use the buttons in your latest message to respond.";
+    return text("Please use the buttons in your latest message to respond.");
   }
 
-  return "Your role does not support WhatsApp interactions yet.";
+  return text("Your role does not support WhatsApp interactions yet.");
 }

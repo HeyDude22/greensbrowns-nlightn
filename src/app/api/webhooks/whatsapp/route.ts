@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { handleIncomingMessage } from "@/lib/whatsapp/handler";
 import { sendWhatsAppMessage } from "@/lib/whatsapp/client";
+import { dispatchHandlerReply } from "@/lib/whatsapp/replies";
 import { transitionPickedUpToInTransit } from "@/lib/pickup-status";
 
 // Meta webhook verification (GET)
@@ -83,8 +84,7 @@ export async function POST(req: NextRequest) {
       ButtonPayload: buttonPayload || undefined,
     });
 
-    // Send reply via Meta API (not TwiML)
-    await sendWhatsAppMessage(from, reply);
+    await dispatchHandlerReply(from, reply);
 
     return NextResponse.json({ ok: true });
   } catch (error) {
