@@ -72,6 +72,9 @@ export const PHOTO_PROMPT = "Please send a photo to confirm.";
 export const COLLECTOR_ACTION_PROMPT =
   "Tap a button to update your pickup status:";
 
+export const COLLECTOR_POST_PICKUP_PROMPT =
+  "Update your delivery status:";
+
 export const COLLECTOR_DELIVERED_PROMPT =
   "When you reach the farm, tap Delivered:";
 

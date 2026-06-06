@@ -2,7 +2,6 @@ import { NextRequest, NextResponse } from "next/server";
 import { handleIncomingMessage } from "@/lib/whatsapp/handler";
 import { sendWhatsAppMessage } from "@/lib/whatsapp/client";
 import { dispatchHandlerReply } from "@/lib/whatsapp/replies";
-import { transitionPickedUpToInTransit } from "@/lib/pickup-status";
 
 // Meta webhook verification (GET)
 export async function GET(req: NextRequest) {
@@ -35,11 +34,16 @@ export async function POST(req: NextRequest) {
 
   // Handle status updates (delivered, read, etc.) — just acknowledge
   if (value?.statuses) {
+    console.log("[Webhook] status update ack", {
+      status: value.statuses[0]?.status,
+      recipient: value.statuses[0]?.recipient_id,
+    });
     return NextResponse.json({ ok: true });
   }
 
   const message = value?.messages?.[0];
   if (!message) {
+    console.log("[Webhook] no message in payload, ack");
     return NextResponse.json({ ok: true });
   }
 
@@ -73,7 +77,12 @@ export async function POST(req: NextRequest) {
   }
 
   try {
-    await transitionPickedUpToInTransit();
+    console.log("[Webhook] incoming message", {
+      from,
+      type: messageType,
+      hasMedia: !!mediaId,
+      buttonPayload: buttonPayload || undefined,
+    });
 
     const reply = await handleIncomingMessage({
       From: from,

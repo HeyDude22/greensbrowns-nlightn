@@ -7,6 +7,9 @@ export async function dispatchHandlerReply(
 ): Promise<void> {
   if (reply.kind === "text") {
     await sendWhatsAppMessage(to, reply.message);
+    for (const followUp of reply.followUps ?? []) {
+      await dispatchHandlerReply(to, followUp);
+    }
     return;
   }
 
