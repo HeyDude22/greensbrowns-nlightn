@@ -10,9 +10,21 @@ import { Label } from "@/components/ui/label";
 import { Loader2 } from "lucide-react";
 import Link from "next/link";
 
+/** Normalize to +91XXXXXXXXXX (E.164 India). Returns null if invalid. */
+function normalizeIndianPhone(raw: string): string | null {
+  const trimmed = raw.trim().replace(/\s/g, "");
+  let normalized = trimmed;
+  if (/^\d{10}$/.test(trimmed)) normalized = `+91${trimmed}`;
+  else if (/^91\d{10}$/.test(trimmed)) normalized = `+${trimmed}`;
+
+  if (!/^\+91\d{10}$/.test(normalized)) return null;
+  return normalized;
+}
+
 export default function RegisterPage() {
   const [fullName, setFullName] = useState("");
   const [email, setEmail] = useState("");
+  const [phone, setPhone] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -30,13 +42,20 @@ export default function RegisterPage() {
       return;
     }
 
+    const normalizedPhone = normalizeIndianPhone(phone);
+    if (!normalizedPhone) {
+      setError("Enter a valid WhatsApp number in +919731296263 format");
+      setLoading(false);
+      return;
+    }
+
     const redirectTo = `${window.location.origin}/auth/callback`;
 
     const { data, error: signUpError } = await supabase.auth.signUp({
       email,
       password,
       options: {
-        data: { full_name: fullName, role: "bwg" },
+        data: { full_name: fullName, role: "bwg", phone: normalizedPhone },
         emailRedirectTo: redirectTo,
       },
     });
@@ -86,6 +105,21 @@ export default function RegisterPage() {
               onChange={(e) => setEmail(e.target.value)}
               required
             />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="regPhone">WhatsApp Number</Label>
+            <Input
+              id="regPhone"
+              type="tel"
+              placeholder="+919731296263"
+              value={phone}
+              onChange={(e) => setPhone(e.target.value)}
+              required
+              autoComplete="tel"
+            />
+            <p className="text-xs text-muted-foreground">
+              Include country code, e.g. +91 followed by your 10-digit mobile number.
+            </p>
           </div>
           <div className="space-y-2">
             <Label htmlFor="regPassword">Password</Label>
