@@ -2,6 +2,8 @@ const phoneNumberId = process.env.META_PHONE_NUMBER_ID!;
 const accessToken = process.env.META_WHATSAPP_TOKEN!;
 const graphUrl = `https://graph.facebook.com/v21.0/${phoneNumberId}/messages`;
 
+const templateLanguage = process.env.META_WA_TEMPLATE_LANG || "en";
+
 function formatPhone(phone: string): string {
   const cleaned = phone.replace(/\D/g, "");
   return cleaned.startsWith("91") ? cleaned : `91${cleaned}`;
@@ -29,6 +31,42 @@ async function metaSend(body: Record<string, unknown>): Promise<string | null> {
     console.error("[WhatsApp] Send failed:", error);
     return null;
   }
+}
+
+export async function sendWhatsAppTemplate(
+  to: string,
+  templateName: string,
+  bodyParameters: string[] = [],
+  languageCode?: string,
+): Promise<string | null> {
+  const components =
+    bodyParameters.length > 0
+      ? [
+          {
+            type: "body",
+            parameters: bodyParameters.map((text) => ({
+              type: "text",
+              text,
+            })),
+          },
+        ]
+      : undefined;
+
+  console.log("[WhatsApp] Sending template", {
+    template: templateName,
+    to: formatPhone(to),
+    bodyParameters,
+  });
+
+  return metaSend({
+    to: formatPhone(to),
+    type: "template",
+    template: {
+      name: templateName,
+      language: { code: languageCode ?? templateLanguage },
+      ...(components ? { components } : {}),
+    },
+  });
 }
 
 export async function sendWhatsAppMessage(

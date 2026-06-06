@@ -1,13 +1,17 @@
 import { createAdminClient } from "@/lib/supabase/admin";
-import { sendWhatsAppMessage, sendWhatsAppButtons, downloadMedia } from "./client";
+import { sendWhatsAppButtons, downloadMedia } from "./client";
 import {
   PHOTO_PROMPT,
-  FARMER_WASTE_PROCESSED_PROMPT,
   COLLECTOR_ACTION_PROMPT,
   COLLECTOR_POST_PICKUP_PROMPT,
   COLLECTOR_DELIVERED_PROMPT,
-  farmerDeliveryETAMessage,
 } from "./templates";
+import {
+  normalizeFarmerWhatsAppChoice,
+  sendTemplateFarmerDeliveryConfirm,
+  sendTemplateFarmerDeliveryEta,
+  sendTemplateFarmerWasteProcessed,
+} from "./wa-templates";
 import { sendBwgDeliveryWhatsApp } from "./notifications";
 import { getETA } from "@/lib/google/distance-matrix";
 import type { WhatsAppHandlerReply } from "./types";
@@ -192,9 +196,13 @@ async function notifyFarmerWasteProcessed(farmerId: string) {
 
   if (!profile?.phone) return;
 
-  await sendWhatsAppButtons(profile.phone, FARMER_WASTE_PROCESSED_PROMPT, [
-    { id: "waste_processed", title: "Waste Processed" },
-  ]);
+  const messageId = await sendTemplateFarmerWasteProcessed(profile.phone);
+  if (!messageId) {
+    console.error("[Farmer Waste Processed] template send failed", {
+      farmerId,
+      phone: profile.phone,
+    });
+  }
 }
 
 async function handleCollectorPhoto(
@@ -366,19 +374,20 @@ async function notifyFarmerETA(pickup: {
     return;
   }
 
-  const message = farmerDeliveryETAMessage({
-    etaMinutes: eta?.durationMinutes ?? 30,
-    regNumber: vehicle?.registration_number ?? "N/A",
-  });
+  const etaMinutes = eta?.durationMinutes ?? 30;
+  const regNumber = vehicle?.registration_number ?? "N/A";
 
-  console.log("[Farmer ETA] sending", {
+  console.log("[Farmer ETA] sending template", {
     pickupId: pickup.id,
     phone: farmerProfile.phone,
-    etaMinutes: eta?.durationMinutes ?? 30,
-    regNumber: vehicle?.registration_number ?? "N/A",
+    etaMinutes,
+    regNumber,
   });
 
-  const messageId = await sendWhatsAppMessage(farmerProfile.phone, message);
+  const messageId = await sendTemplateFarmerDeliveryEta(farmerProfile.phone, {
+    etaMinutes,
+    regNumber,
+  });
 
   if (messageId) {
     console.log("[Farmer ETA] sent", { pickupId: pickup.id, messageId });
@@ -411,20 +420,12 @@ async function notifyFarmerConfirmDelivery(farmerId: string) {
     return;
   }
 
-  console.log("[Farmer Delivery] sending buttons", {
+  console.log("[Farmer Delivery] sending template", {
     farmerId,
     phone: profile.phone,
   });
 
-  const messageId = await sendWhatsAppButtons(
-    profile.phone,
-    "Waste has been delivered to your farm. Please confirm:",
-    [
-      { id: "received", title: "Received" },
-      { id: "reject_mixed", title: "Reject-Mixed Waste" },
-      { id: "reject_other", title: "Reject-Other" },
-    ]
-  );
+  const messageId = await sendTemplateFarmerDeliveryConfirm(profile.phone);
 
   if (messageId) {
     console.log("[Farmer Delivery] sent", { farmerId, messageId });
@@ -443,7 +444,7 @@ async function handleFarmerResponse(
   const pickup = await findDeliveredPickupForFarmer(profileId);
   if (!pickup) return text("No pending delivery found.");
 
-  const choice = body.trim().toLowerCase();
+  const choice = normalizeFarmerWhatsAppChoice(body);
 
   type RejectionReason = "mixed_waste" | "capacity_full" | "other";
   const rejectionMap: Record<string, RejectionReason> = {
@@ -608,7 +609,7 @@ export async function handleIncomingMessage(
   }
 
   if (profile.role === "farmer") {
-    const input = buttonPayload || messageBody;
+    const input = normalizeFarmerWhatsAppChoice(buttonPayload || messageBody);
 
     if (input === "waste_processed") {
       return handleFarmerWasteProcessed(profile.id);

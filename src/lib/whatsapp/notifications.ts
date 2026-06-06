@@ -1,18 +1,18 @@
 import { createAdminClient } from "@/lib/supabase/admin";
-import { sendWhatsAppMessage, sendWhatsAppButtons } from "./client";
-import {
-  jobAssignedMessage,
-  pickupReminder24hMessage,
-  pickupReminder1hMessage,
-  farmerDeliveryIncomingMessage,
-  bwgPickupScheduledMessage,
-  bwgDeliveryConfirmedMessage,
-  COLLECTOR_ACTION_PROMPT,
-} from "./templates";
+import { sendWhatsAppButtons } from "./client";
+import { COLLECTOR_ACTION_PROMPT } from "./templates";
 import { COLLECTOR_PICKED_UP_BUTTON } from "./types";
+import {
+  sendTemplateBwgDeliveryConfirmed,
+  sendTemplateBwgPickupScheduled,
+  sendTemplateCollectorJobAssigned,
+  sendTemplateCollectorPickupReminder,
+  sendTemplateFarmerDeliveryIncoming,
+} from "./wa-templates";
 
 const supabase = createAdminClient();
 
+/** Session buttons for collector replies within an open 24h window */
 export async function sendCollectorActionButtons(phone: string, body?: string) {
   await sendWhatsAppButtons(
     phone,
@@ -51,20 +51,23 @@ export async function sendJobAssignedNotification(pickupId: string) {
 
   if (!vehicleDrivers?.length) return;
 
-  const message = jobAssignedMessage({
-    orgName: org.name,
-    address: org.address,
-    date: pickup.scheduled_date,
-    slot: pickup.scheduled_slot,
-    lat: org.lat,
-    lng: org.lng,
-  });
-
   for (const vd of vehicleDrivers) {
     const driver = vd.drivers as unknown as { name: string; phone: string | null };
     if (driver?.phone) {
-      await sendWhatsAppMessage(driver.phone, message);
-      await sendCollectorActionButtons(driver.phone);
+      const messageId = await sendTemplateCollectorJobAssigned(driver.phone, {
+        orgName: org.name,
+        address: org.address,
+        date: pickup.scheduled_date,
+        slot: pickup.scheduled_slot,
+        lat: org.lat,
+        lng: org.lng,
+      });
+      if (!messageId) {
+        console.error("[Job Assigned] template send failed", {
+          pickupId,
+          phone: driver.phone,
+        });
+      }
     }
   }
 }
@@ -121,20 +124,25 @@ export async function sendPickupReminders(type: "24h" | "1h") {
         .select("driver_id, drivers(name, phone)")
         .eq("vehicle_id", pickup.vehicle_id);
 
-      const templateFn =
-        type === "24h" ? pickupReminder24hMessage : pickupReminder1hMessage;
-      const message = templateFn({
-        orgName: org.name,
-        slot: pickup.scheduled_slot,
-        lat: org.lat,
-        lng: org.lng,
-      });
-
       for (const vd of vehicleDrivers || []) {
         const driver = vd.drivers as unknown as { name: string; phone: string | null };
         if (driver?.phone) {
-          await sendWhatsAppMessage(driver.phone, message);
-          await sendCollectorActionButtons(driver.phone);
+          const messageId = await sendTemplateCollectorPickupReminder(
+            driver.phone,
+            type,
+            {
+              orgName: org.name,
+              slot: pickup.scheduled_slot,
+              lat: org.lat,
+              lng: org.lng,
+            },
+          );
+          if (!messageId) {
+            console.error(`[Collector Reminder ${type}] template send failed`, {
+              pickupId: pickup.id,
+              phone: driver.phone,
+            });
+          }
         }
       }
     }
@@ -179,19 +187,20 @@ export async function sendPickupReminders(type: "24h" | "1h") {
 
         const driverName = (driverData?.drivers as unknown as { name: string })?.name ?? "Collector";
 
-        const message = farmerDeliveryIncomingMessage({
-          slot: pickup.scheduled_slot,
-          collectorName: driverName,
-          weightKg: pickup.estimated_weight_kg,
-          regNumber: vehicle?.registration_number ?? "N/A",
-        });
-
-        console.log("[Farmer Reminder 24h] sending", {
+        console.log("[Farmer Reminder 24h] sending template", {
           pickupId: pickup.id,
           phone: farmerProfile.phone,
         });
 
-        const messageId = await sendWhatsAppMessage(farmerProfile.phone, message);
+        const messageId = await sendTemplateFarmerDeliveryIncoming(
+          farmerProfile.phone,
+          {
+            slot: pickup.scheduled_slot,
+            collectorName: driverName,
+            weightKg: pickup.estimated_weight_kg,
+            regNumber: vehicle?.registration_number ?? "N/A",
+          },
+        );
 
         if (messageId) {
           console.log("[Farmer Reminder 24h] sent", {
@@ -243,13 +252,16 @@ export async function sendBwgPickupWhatsApp(pickupId: string) {
     return;
   }
 
-  await sendWhatsAppMessage(
-    phone,
-    bwgPickupScheduledMessage({
-      date: pickup.scheduled_date,
-      slot: pickup.scheduled_slot,
-    })
-  );
+  const messageId = await sendTemplateBwgPickupScheduled(phone, {
+    date: pickup.scheduled_date,
+    slot: pickup.scheduled_slot,
+  });
+  if (!messageId) {
+    console.error("[BWG WhatsApp] pickup scheduled template failed", {
+      pickupId,
+      phone,
+    });
+  }
 }
 
 export async function sendBwgDeliveryWhatsApp(pickupId: string) {
@@ -267,13 +279,16 @@ export async function sendBwgDeliveryWhatsApp(pickupId: string) {
     return;
   }
 
-  await sendWhatsAppMessage(
-    phone,
-    bwgDeliveryConfirmedMessage({
-      date: pickup.scheduled_date,
-      slot: pickup.scheduled_slot,
-    })
-  );
+  const messageId = await sendTemplateBwgDeliveryConfirmed(phone, {
+    date: pickup.scheduled_date,
+    slot: pickup.scheduled_slot,
+  });
+  if (!messageId) {
+    console.error("[BWG WhatsApp] delivery confirmed template failed", {
+      pickupId,
+      phone,
+    });
+  }
 }
 
 /** @deprecated Use sendBwgPickupWhatsApp */
