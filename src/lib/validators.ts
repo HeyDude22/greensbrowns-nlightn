@@ -1,8 +1,19 @@
 import { z } from "zod";
 
+const indianPhoneSchema = z
+  .string()
+  .transform((raw) => {
+    const trimmed = raw.trim().replace(/\s/g, "");
+    if (/^\d{10}$/.test(trimmed)) return `+91${trimmed}`;
+    if (/^91\d{10}$/.test(trimmed)) return `+${trimmed}`;
+    return trimmed;
+  })
+  .refine((v) => /^\+91\d{10}$/.test(v), "Enter a valid number in +919731296263 format");
+
 export const registerSchema = z.object({
   full_name: z.string().min(2, "Name must be at least 2 characters"),
   email: z.string().email("Invalid email address"),
+  phone: indianPhoneSchema,
   password: z.string().min(8, "Password must be at least 8 characters"),
   role: z.enum(["bwg", "collector", "farmer"]),
 });
