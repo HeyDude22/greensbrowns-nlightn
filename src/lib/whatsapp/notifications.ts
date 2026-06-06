@@ -9,7 +9,7 @@ import {
   bwgDeliveryConfirmedMessage,
   COLLECTOR_ACTION_PROMPT,
 } from "./templates";
-import { COLLECTOR_ACTION_BUTTONS } from "./types";
+import { COLLECTOR_PICKED_UP_BUTTON } from "./types";
 
 const supabase = createAdminClient();
 
@@ -17,7 +17,7 @@ export async function sendCollectorActionButtons(phone: string, body?: string) {
   await sendWhatsAppButtons(
     phone,
     body ?? COLLECTOR_ACTION_PROMPT,
-    COLLECTOR_ACTION_BUTTONS
+    COLLECTOR_PICKED_UP_BUTTON
   );
 }
 
@@ -140,13 +140,30 @@ export async function sendPickupReminders(type: "24h" | "1h") {
     }
 
     if (type === "24h" && pickup.farmer_id) {
-      const { data: farmerProfile } = await supabase
+      const { data: farmerProfile, error: profileError } = await supabase
         .from("profiles")
         .select("phone")
         .eq("id", pickup.farmer_id)
         .single();
 
-      if (farmerProfile?.phone && pickup.vehicle_id) {
+      if (profileError) {
+        console.error("[Farmer Reminder 24h] profile lookup error", {
+          pickupId: pickup.id,
+          farmerId: pickup.farmer_id,
+          error: profileError.message,
+        });
+      }
+
+      if (!farmerProfile?.phone) {
+        console.warn("[Farmer Reminder 24h] skip: no farmer phone", {
+          pickupId: pickup.id,
+          farmerId: pickup.farmer_id,
+        });
+      } else if (!pickup.vehicle_id) {
+        console.warn("[Farmer Reminder 24h] skip: no vehicle_id", {
+          pickupId: pickup.id,
+        });
+      } else {
         const { data: vehicle } = await supabase
           .from("vehicles")
           .select("registration_number")
@@ -169,7 +186,24 @@ export async function sendPickupReminders(type: "24h" | "1h") {
           regNumber: vehicle?.registration_number ?? "N/A",
         });
 
-        await sendWhatsAppMessage(farmerProfile.phone, message);
+        console.log("[Farmer Reminder 24h] sending", {
+          pickupId: pickup.id,
+          phone: farmerProfile.phone,
+        });
+
+        const messageId = await sendWhatsAppMessage(farmerProfile.phone, message);
+
+        if (messageId) {
+          console.log("[Farmer Reminder 24h] sent", {
+            pickupId: pickup.id,
+            messageId,
+          });
+        } else {
+          console.error("[Farmer Reminder 24h] send failed", {
+            pickupId: pickup.id,
+            phone: farmerProfile.phone,
+          });
+        }
       }
     }
   }
