@@ -1,7 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { sendWhatsAppMessage } from "@/lib/whatsapp/client";
-import { FARMER_AUTO_ACCEPTED } from "@/lib/whatsapp/templates";
+import {
+  sendTemplateFarmerAutoAccepted,
+  sendTemplateFarmerWasteProcessed,
+} from "@/lib/whatsapp/wa-templates";
 
 export async function GET(req: NextRequest) {
   const authHeader = req.headers.get("authorization");
@@ -61,12 +63,8 @@ export async function GET(req: NextRequest) {
         .single();
 
       if (profile?.phone) {
-        await sendWhatsAppMessage(profile.phone, FARMER_AUTO_ACCEPTED);
-        const { sendWhatsAppButtons } = await import("@/lib/whatsapp/client");
-        const { FARMER_WASTE_PROCESSED_PROMPT } = await import("@/lib/whatsapp/templates");
-        await sendWhatsAppButtons(profile.phone, FARMER_WASTE_PROCESSED_PROMPT, [
-          { id: "waste_processed", title: "Waste Processed" },
-        ]);
+        await sendTemplateFarmerAutoAccepted(profile.phone);
+        await sendTemplateFarmerWasteProcessed(profile.phone);
       }
     }
 
