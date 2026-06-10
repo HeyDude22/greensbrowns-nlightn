@@ -1,13 +1,17 @@
 import { z } from "zod";
 
+export function normalizeIndianPhone(raw: string): string | null {
+  const trimmed = raw.trim().replace(/\s/g, "");
+  let normalized = trimmed;
+  if (/^\d{10}$/.test(trimmed)) normalized = `+91${trimmed}`;
+  else if (/^91\d{10}$/.test(trimmed)) normalized = `+${trimmed}`;
+  if (!/^\+91\d{10}$/.test(normalized)) return null;
+  return normalized;
+}
+
 const indianPhoneSchema = z
   .string()
-  .transform((raw) => {
-    const trimmed = raw.trim().replace(/\s/g, "");
-    if (/^\d{10}$/.test(trimmed)) return `+91${trimmed}`;
-    if (/^91\d{10}$/.test(trimmed)) return `+${trimmed}`;
-    return trimmed;
-  })
+  .transform((raw) => normalizeIndianPhone(raw) ?? raw)
   .refine((v) => /^\+91\d{10}$/.test(v), "Enter a valid number in +919731296263 format");
 
 export const registerSchema = z.object({

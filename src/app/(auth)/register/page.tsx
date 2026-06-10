@@ -9,17 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Loader2 } from "lucide-react";
 import Link from "next/link";
-
-/** Normalize to +91XXXXXXXXXX (E.164 India). Returns null if invalid. */
-function normalizeIndianPhone(raw: string): string | null {
-  const trimmed = raw.trim().replace(/\s/g, "");
-  let normalized = trimmed;
-  if (/^\d{10}$/.test(trimmed)) normalized = `+91${trimmed}`;
-  else if (/^91\d{10}$/.test(trimmed)) normalized = `+${trimmed}`;
-
-  if (!/^\+91\d{10}$/.test(normalized)) return null;
-  return normalized;
-}
+import { normalizeIndianPhone } from "@/lib/validators";
 
 export default function RegisterPage() {
   const [fullName, setFullName] = useState("");
