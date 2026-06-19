@@ -20,6 +20,7 @@ import { PageHeader } from "@/components/shared/page-header";
 import { DashboardSkeleton } from "@/components/shared/loading-skeleton";
 import { Camera, CreditCard, ImagePlus, X } from "lucide-react";
 import { toast } from "sonner";
+import { selectFifoPrepaidPackage } from "@/lib/prepaid-credits";
 
 const MAX_PHOTOS = 3;
 const MAX_FILE_SIZE = 2 * 1024 * 1024; // 2MB
@@ -107,19 +108,25 @@ export default function SchedulePickupPage() {
     async function fetchOrg() {
       setOrgId(memberOrgId);
 
-      // Fetch active prepaid package (earliest expiring first)
-      const { data: prepaidData } = await supabase
+      // FIFO: earliest-expiring approved package with remaining credits
+      const { data: prepaidRows } = await supabase
         .from("prepaid_packages")
-        .select("id, pickup_count, used_count, expires_at")
+        .select("id, pickup_count, used_count, expires_at, status")
         .eq("organization_id", memberOrgId!)
         .eq("status", "approved")
-        .gt("expires_at", new Date().toISOString())
-        .order("expires_at", { ascending: true })
-        .limit(1)
-        .maybeSingle();
+        .gt("expires_at", new Date().toISOString());
 
-      if (prepaidData && prepaidData.pickup_count > prepaidData.used_count) {
-        setPrepaidPackage(prepaidData);
+      const fifoPackage = prepaidRows
+        ? selectFifoPrepaidPackage(prepaidRows)
+        : null;
+
+      if (fifoPackage) {
+        setPrepaidPackage({
+          id: fifoPackage.id,
+          pickup_count: fifoPackage.pickup_count,
+          used_count: fifoPackage.used_count,
+          expires_at: fifoPackage.expires_at,
+        });
       }
       setLoading(false);
     }

@@ -9,6 +9,7 @@ import { StatCard } from "@/components/shared/stat-card";
 import { DashboardSkeleton } from "@/components/shared/loading-skeleton";
 import { PICKUP_STATUS_LABELS, PICKUP_STATUS_COLORS } from "@/lib/constants";
 import { formatDateDDMMYYYY } from "@/lib/utils";
+import { sumAvailableCredits } from "@/lib/prepaid-credits";
 import { Truck, Calendar, Weight, FileText, CreditCard } from "lucide-react";
 import Link from "next/link";
 import type { Pickup } from "@/types";
@@ -64,17 +65,16 @@ export default function BwgDashboard() {
       // Fetch prepaid credits
       const { data: prepaidData } = await supabase
         .from("prepaid_packages")
-        .select("pickup_count, used_count")
+        .select("pickup_count, used_count, status, expires_at")
         .eq("organization_id", orgId)
         .eq("status", "approved")
         .gt("expires_at", new Date().toISOString());
 
       if (prepaidData) {
-        const totalCredits = prepaidData.reduce(
-          (sum, pkg) => sum + (pkg.pickup_count - pkg.used_count),
-          0
-        );
-        setStats((s) => ({ ...s, prepaidCredits: totalCredits }));
+        setStats((s) => ({
+          ...s,
+          prepaidCredits: sumAvailableCredits(prepaidData),
+        }));
       }
 
       setLoading(false);

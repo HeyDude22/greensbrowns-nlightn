@@ -21,6 +21,7 @@ import { formatDateDDMMYYYY } from "@/lib/utils";
 import { Plus, Truck, CreditCard } from "lucide-react";
 import Link from "next/link";
 import type { Pickup } from "@/types";
+import { sumAvailableCredits } from "@/lib/prepaid-credits";
 
 export default function BwgPickupsPage() {
   const { user, orgId, loading: orgLoading, supabase } = useOrganization();
@@ -45,17 +46,13 @@ export default function BwgPickupsPage() {
 
       const { data: prepaidData } = await supabase
         .from("prepaid_packages")
-        .select("pickup_count, used_count")
+        .select("id, pickup_count, used_count, status, expires_at")
         .eq("organization_id", orgId!)
         .eq("status", "approved")
         .gt("expires_at", new Date().toISOString());
 
       if (prepaidData) {
-        const totalCredits = prepaidData.reduce(
-          (sum, pkg) => sum + (pkg.pickup_count - pkg.used_count),
-          0
-        );
-        setCredits(totalCredits);
+        setCredits(sumAvailableCredits(prepaidData));
       }
 
       setLoading(false);

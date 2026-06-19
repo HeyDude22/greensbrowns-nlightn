@@ -1039,7 +1039,7 @@ export type Database = {
         | "rejected"
         | "processed"
         | "cancelled"
-      prepaid_package_status: "pending" | "approved" | "rejected" | "expired"
+      prepaid_package_status: "pending" | "approved" | "rejected" | "expired" | "exhausted"
       recurrence_type: "one_time" | "weekly" | "biweekly" | "monthly"
       ticket_status: "open" | "in_progress" | "resolved" | "closed"
       trip_status: "in_transit" | "delivered"
@@ -1216,7 +1216,7 @@ export const Constants = {
         "processed",
         "cancelled",
       ],
-      prepaid_package_status: ["pending", "approved", "rejected", "expired"],
+      prepaid_package_status: ["pending", "approved", "rejected", "expired", "exhausted"],
       recurrence_type: ["one_time", "weekly", "biweekly", "monthly"],
       ticket_status: ["open", "in_progress", "resolved", "closed"],
       trip_status: ["in_transit", "delivered"],

@@ -17,11 +17,22 @@ import { PageHeader } from "@/components/shared/page-header";
 import { EmptyState } from "@/components/shared/empty-state";
 import { DashboardSkeleton } from "@/components/shared/loading-skeleton";
 import { StatCard } from "@/components/shared/stat-card";
-import { PREPAID_STATUS_LABELS, PREPAID_STATUS_COLORS } from "@/lib/constants";
 import { CreditCard, Clock, Package, CalendarDays, Truck } from "lucide-react";
 import { toast } from "sonner";
 import { formatPaise, formatDateDDMMYYYY } from "@/lib/utils";
+import {
+  sumAvailableCredits,
+  isUsablePrepaidPackage,
+  getPrepaidPackageDisplayStatus,
+  PREPAID_DISPLAY_STATUS_LABELS,
+  PREPAID_DISPLAY_STATUS_COLORS,
+  remainingCredits,
+} from "@/lib/prepaid-credits";
 import type { PrepaidPackage, PrepaidPackagePlan } from "@/types";
+
+interface PrepaidPackageWithPlan extends PrepaidPackage {
+  prepaid_package_plans: { name: string } | null;
+}
 
 interface AssignedPackageWithPlan {
   id: string;
@@ -34,7 +45,7 @@ interface AssignedPackageWithPlan {
 export default function BwgPrepaidPage() {
   const { user, orgId: memberOrgId, loading: orgLoading, supabase } = useOrganization();
   const [orgId, setOrgId] = useState<string | null>(null);
-  const [packages, setPackages] = useState<PrepaidPackage[]>([]);
+  const [packages, setPackages] = useState<PrepaidPackageWithPlan[]>([]);
   const [assignedPackages, setAssignedPackages] = useState<AssignedPackageWithPlan[]>([]);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState<string | null>(null);
@@ -42,11 +53,11 @@ export default function BwgPrepaidPage() {
   async function fetchPackages(organizationId: string) {
     const { data } = await supabase
       .from("prepaid_packages")
-      .select("*")
+      .select("*, prepaid_package_plans(name)")
       .eq("organization_id", organizationId)
       .order("created_at", { ascending: false });
 
-    if (data) setPackages(data as PrepaidPackage[]);
+    if (data) setPackages(data as PrepaidPackageWithPlan[]);
   }
 
   async function fetchAssignedPackages(organizationId: string) {
@@ -101,30 +112,17 @@ export default function BwgPrepaidPage() {
     setSubmitting(null);
   }
 
-  const availableCredits = packages
-    .filter(
-      (pkg) =>
-        pkg.status === "approved" &&
-        pkg.expires_at &&
-        new Date(pkg.expires_at) > new Date()
-    )
-    .reduce((sum, pkg) => sum + (pkg.pickup_count - pkg.used_count), 0);
+  const availableCredits = sumAvailableCredits(packages);
 
   const pendingRequests = packages.filter(
     (pkg) => pkg.status === "pending"
   ).length;
 
-  const hasActivePackage = packages.some(
-    (pkg) =>
-      pkg.status === "approved" &&
-      pkg.expires_at &&
-      new Date(pkg.expires_at) > new Date() &&
-      pkg.pickup_count > pkg.used_count
-  );
+  const hasUsableCredits = packages.some(isUsablePrepaidPackage);
 
   const hasPendingRequest = pendingRequests > 0;
 
-  const canRequestNew = !hasActivePackage && !hasPendingRequest;
+  const canRequestNew = !hasUsableCredits && !hasPendingRequest;
 
   if (orgLoading || loading) return <DashboardSkeleton />;
 
@@ -148,16 +146,14 @@ export default function BwgPrepaidPage() {
         />
       </div>
 
-      {/* Guard banner */}
       {!canRequestNew && (
         <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
-          {hasActivePackage
-            ? "You have an active prepaid package with remaining credits. You can request a new package once your credits are used up or the validity period ends."
+          {hasUsableCredits
+            ? "You have remaining pickup credits on an approved package. You can request a new package once your credits are used up or the validity period ends."
             : "You have a pending prepaid request awaiting admin approval. Please wait for it to be processed before submitting another."}
         </div>
       )}
 
-      {/* Available Plans Section */}
       <div className="space-y-4">
         <h2 className="text-lg font-semibold">Available Plans</h2>
         {assignedPackages.length === 0 ? (
@@ -208,10 +204,9 @@ export default function BwgPrepaidPage() {
         )}
       </div>
 
-      {/* Package History Table */}
       <Card>
         <CardHeader>
-          <CardTitle>Your Packages</CardTitle>
+          <CardTitle>Package purchase history</CardTitle>
         </CardHeader>
         <CardContent className="p-0">
           {packages.length === 0 ? (
@@ -227,6 +222,7 @@ export default function BwgPrepaidPage() {
               <TableHeader>
                 <TableRow>
                   <TableHead>Date</TableHead>
+                  <TableHead>Plan</TableHead>
                   <TableHead>Pickup Credits</TableHead>
                   <TableHead>Used Credit</TableHead>
                   <TableHead>Remaining Credits</TableHead>
@@ -235,33 +231,40 @@ export default function BwgPrepaidPage() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {packages.map((pkg) => (
-                  <TableRow key={pkg.id}>
-                    <TableCell>
-                      {formatDateDDMMYYYY(pkg.created_at)}
-                    </TableCell>
-                    <TableCell>{pkg.pickup_count}</TableCell>
-                    <TableCell>{pkg.used_count}</TableCell>
-                    <TableCell>
-                      {pkg.status === "approved"
-                        ? pkg.pickup_count - pkg.used_count
-                        : "\u2014"}
-                    </TableCell>
-                    <TableCell>
-                      <Badge
-                        variant="secondary"
-                        className={PREPAID_STATUS_COLORS[pkg.status]}
-                      >
-                        {PREPAID_STATUS_LABELS[pkg.status]}
-                      </Badge>
-                    </TableCell>
-                    <TableCell>
-                      {pkg.expires_at
-                        ? formatDateDDMMYYYY(pkg.expires_at)
-                        : "\u2014"}
-                    </TableCell>
-                  </TableRow>
-                ))}
+                {packages.map((pkg) => {
+                  const displayStatus = getPrepaidPackageDisplayStatus(pkg);
+                  return (
+                    <TableRow key={pkg.id}>
+                      <TableCell>
+                        {formatDateDDMMYYYY(pkg.created_at)}
+                      </TableCell>
+                      <TableCell>
+                        {pkg.prepaid_package_plans?.name ?? "\u2014"}
+                      </TableCell>
+                      <TableCell>{pkg.pickup_count}</TableCell>
+                      <TableCell>{pkg.used_count}</TableCell>
+                      <TableCell>
+                        {pkg.status === "approved" ||
+                        pkg.status === "exhausted"
+                          ? remainingCredits(pkg)
+                          : "\u2014"}
+                      </TableCell>
+                      <TableCell>
+                        <Badge
+                          variant="secondary"
+                          className={PREPAID_DISPLAY_STATUS_COLORS[displayStatus]}
+                        >
+                          {PREPAID_DISPLAY_STATUS_LABELS[displayStatus]}
+                        </Badge>
+                      </TableCell>
+                      <TableCell>
+                        {pkg.expires_at
+                          ? formatDateDDMMYYYY(pkg.expires_at)
+                          : "\u2014"}
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
               </TableBody>
             </Table>
           )}
