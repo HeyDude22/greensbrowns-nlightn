@@ -33,7 +33,7 @@ export type TicketStatus = "open" | "in_progress" | "resolved" | "closed";
 
 export type VehicleType = "auto" | "mini_truck" | "pickup" | "light_truck" | "medium_truck" | "truck" | "tempo" | "tipper" | "trolley";
 
-export type PrepaidPackageStatus = "pending" | "approved" | "rejected" | "expired";
+export type PrepaidPackageStatus = "pending" | "approved" | "rejected" | "expired" | "exhausted";
 
 export type VehicleDocType = "rc" | "insurance" | "tax_receipt" | "emission_cert" | "fitness_cert";
 

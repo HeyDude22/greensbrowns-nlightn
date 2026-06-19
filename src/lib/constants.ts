@@ -126,9 +126,10 @@ export const PICKUP_STATUS_COLORS: Record<PickupStatus, string> = {
 
 export const PREPAID_STATUS_LABELS: Record<PrepaidPackageStatus, string> = {
   pending: "Pending",
-  approved: "Active",
+  approved: "Approved",
   rejected: "Rejected",
   expired: "Expired",
+  exhausted: "Exhausted",
 };
 
 export const PREPAID_STATUS_COLORS: Record<PrepaidPackageStatus, string> = {
@@ -136,6 +137,7 @@ export const PREPAID_STATUS_COLORS: Record<PrepaidPackageStatus, string> = {
   approved: "bg-green-100 text-green-800",
   rejected: "bg-red-100 text-red-800",
   expired: "bg-gray-100 text-gray-800",
+  exhausted: "bg-orange-100 text-orange-800",
 };
 
 export const VEHICLE_TYPE_LABELS: Record<VehicleType, string> = {
