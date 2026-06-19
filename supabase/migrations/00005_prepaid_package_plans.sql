@@ -24,8 +24,14 @@ CREATE TRIGGER update_prepaid_package_plans_updated_at
   FOR EACH ROW EXECUTE FUNCTION update_updated_at();
 
 -- BWG prepaid package requests (plan_id added in 00006)
+-- Status lifecycle:
+--   pending   — BWG submitted a purchase request, awaiting admin approval
+--   approved  — admin approved; credits are usable until expiry or exhaustion
+--   rejected  — admin rejected the purchase request
+--   expired   — validity period ended
+--   exhausted — all pickup credits used (added for existing DBs in 00039)
 CREATE TYPE prepaid_package_status AS ENUM (
-  'pending', 'approved', 'rejected', 'expired'
+  'pending', 'approved', 'rejected', 'expired', 'exhausted'
 );
 
 CREATE TABLE prepaid_packages (
