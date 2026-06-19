@@ -18,6 +18,7 @@ import { DashboardSkeleton } from "@/components/shared/loading-skeleton";
 import { FileText, Download } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
+import { formatDateDDMMYYYY } from "@/lib/utils";
 
 const DOC_TYPE_LABELS: Record<string, string> = {
   manifest: "Manifest",
@@ -114,7 +115,7 @@ export default function CompliancePage() {
                       {doc.pickup?.pickup_number || "—"}
                     </TableCell>
                     <TableCell>
-                      {new Date(doc.generated_at).toLocaleDateString()}
+                      {formatDateDDMMYYYY(doc.generated_at)}
                     </TableCell>
                     <TableCell>
                       {doc.file_url ? (

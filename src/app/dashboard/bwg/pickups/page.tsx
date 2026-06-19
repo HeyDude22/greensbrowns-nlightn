@@ -17,6 +17,7 @@ import { PageHeader } from "@/components/shared/page-header";
 import { EmptyState } from "@/components/shared/empty-state";
 import { DashboardSkeleton } from "@/components/shared/loading-skeleton";
 import { PICKUP_STATUS_LABELS, PICKUP_STATUS_COLORS } from "@/lib/constants";
+import { formatDateDDMMYYYY } from "@/lib/utils";
 import { Plus, Truck, CreditCard } from "lucide-react";
 import Link from "next/link";
 import type { Pickup } from "@/types";
@@ -70,11 +71,17 @@ export default function BwgPickupsPage() {
         title="Pickups"
         description="Manage your waste pickups"
         action={
-          <Button asChild>
-            <Link href="/dashboard/bwg/pickups/new">
+          credits > 0 ? (
+            <Button asChild>
+              <Link href="/dashboard/bwg/pickups/new">
+                <Plus className="mr-2 h-4 w-4" /> Schedule Pickup
+              </Link>
+            </Button>
+          ) : (
+            <Button disabled>
               <Plus className="mr-2 h-4 w-4" /> Schedule Pickup
-            </Link>
-          </Button>
+            </Button>
+          )
         }
       />
 
@@ -82,17 +89,14 @@ export default function BwgPickupsPage() {
         <div className="rounded-lg border border-green-200 bg-green-50 p-4 flex items-center gap-3">
           <CreditCard className="h-5 w-5 text-green-600 shrink-0" />
           <p className="text-sm text-green-800">
-            You have <strong>{credits}</strong> prepaid pickup credit{credits !== 1 ? "s" : ""} remaining.
+            You have <strong>{credits}</strong> remaining credit{credits !== 1 ? "s" : ""}.
           </p>
         </div>
       ) : (
-        <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 flex items-center gap-3">
-          <CreditCard className="h-5 w-5 text-amber-600 shrink-0" />
-          <p className="text-sm text-amber-800">
-            No prepaid credits.{" "}
-            <Link href="/dashboard/bwg/prepaid" className="underline font-medium">
-              Buy prepaid credits
-            </Link>
+        <div className="rounded-lg border border-red-200 bg-red-50 p-4 flex items-center gap-3">
+          <CreditCard className="h-5 w-5 text-red-600 shrink-0" />
+          <p className="text-sm text-red-800">
+            Your organization has no prepaid pickup credits. Please contact your admin to assign a prepaid package.
           </p>
         </div>
       )}
@@ -132,7 +136,7 @@ export default function BwgPickupsPage() {
                       </Link>
                     </TableCell>
                     <TableCell>
-                      {new Date(pickup.scheduled_date).toLocaleDateString()}
+                      {formatDateDDMMYYYY(pickup.scheduled_date)}
                     </TableCell>
                     <TableCell className="capitalize">
                       {pickup.scheduled_slot || "—"}

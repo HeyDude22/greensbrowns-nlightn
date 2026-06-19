@@ -19,7 +19,7 @@ import {
 import { PageHeader } from "@/components/shared/page-header";
 import { DashboardSkeleton } from "@/components/shared/loading-skeleton";
 import LocationPicker from "@/components/shared/location-picker-dynamic";
-import { buildOsmEmbedUrl } from "@/lib/utils";
+import { buildOsmEmbedUrl, formatDateTimeDDMMYYYY } from "@/lib/utils";
 import { Building2, Pencil } from "lucide-react";
 import { toast } from "sonner";
 import ReactMarkdown from "react-markdown";
@@ -165,7 +165,7 @@ export default function OrganizationPage() {
             doc.setTextColor(100);
             doc.text(`Digitally accepted by: ${user.email}`, margin, y);
             doc.text(`Organization: ${name}`, margin, y + 5);
-            doc.text(`Date: ${new Date().toLocaleString()}`, margin, y + 10);
+            doc.text(`Date: ${formatDateTimeDDMMYYYY(new Date())}`, margin, y + 10);
 
             const pdfBlob = doc.output("blob");
 

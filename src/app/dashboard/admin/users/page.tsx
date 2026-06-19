@@ -30,6 +30,7 @@ import { Users, Pencil } from "lucide-react";
 import { toast } from "sonner";
 import type { Profile, UserRole } from "@/types";
 import { normalizeIndianPhone } from "@/lib/validators";
+import { formatDateDDMMYYYY } from "@/lib/utils";
 import { updateBwgUser } from "./actions";
 
 type BwgUserRow = Profile & {
@@ -169,7 +170,7 @@ export default function AdminUsersPage() {
                       </Badge>
                     </TableCell>
                     <TableCell>
-                      {new Date(profile.created_at).toLocaleDateString()}
+                      {formatDateDDMMYYYY(profile.created_at)}
                     </TableCell>
                     <TableCell>
                       {profile.role === "bwg" && (

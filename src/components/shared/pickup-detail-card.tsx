@@ -1,6 +1,7 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { PICKUP_STATUS_LABELS, PICKUP_STATUS_COLORS } from "@/lib/constants";
+import { formatDateDDMMYYYY } from "@/lib/utils";
 import { Lock } from "lucide-react";
 import type { Pickup } from "@/types";
 
@@ -44,7 +45,7 @@ export function PickupDetailCard({
           <DetailRow label="Organization">{orgName || "—"}</DetailRow>
         )}
         <DetailRow label="Scheduled Date">
-          {new Date(pickup.scheduled_date).toLocaleDateString()}
+          {formatDateDDMMYYYY(pickup.scheduled_date)}
         </DetailRow>
         <DetailRow label="Time Slot">
           <span className="capitalize">{pickup.scheduled_slot || "—"}</span>
