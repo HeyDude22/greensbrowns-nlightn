@@ -65,7 +65,7 @@ export default function BwgDashboard() {
       // Fetch prepaid credits
       const { data: prepaidData } = await supabase
         .from("prepaid_packages")
-        .select("pickup_count, used_count, status, expires_at")
+        .select("id, pickup_count, used_count, status, expires_at")
         .eq("organization_id", orgId)
         .eq("status", "approved")
         .gt("expires_at", new Date().toISOString());
