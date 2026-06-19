@@ -12,7 +12,8 @@ export type PrepaidPackageDisplayStatus =
   | "active"
   | "expired"
   | "exhausted"
-  | "pending approval";
+  | "pending approval"
+  | "rejected";
 
 export function remainingCredits(pkg: PrepaidCreditPackage): number {
   return Math.max(0, pkg.pickup_count - pkg.used_count);
@@ -64,7 +65,7 @@ export function getPrepaidPackageDisplayStatus(
   pkg: PrepaidCreditPackage
 ): PrepaidPackageDisplayStatus {
   if (pkg.status === "pending") return "pending approval";
-  if (pkg.status === "rejected") return "expired";
+  if (pkg.status === "rejected") return "rejected";
   if (isPrepaidPackageExpired(pkg)) return "expired";
   if (pkg.status === "exhausted" || isPrepaidPackageExhausted(pkg)) {
     return "exhausted";
@@ -81,6 +82,7 @@ export const PREPAID_DISPLAY_STATUS_LABELS: Record<
   expired: "Expired",
   exhausted: "Exhausted",
   "pending approval": "Pending approval",
+  rejected: "Rejected",
 };
 
 export const PREPAID_DISPLAY_STATUS_COLORS: Record<
@@ -91,4 +93,5 @@ export const PREPAID_DISPLAY_STATUS_COLORS: Record<
   expired: "bg-gray-100 text-gray-600",
   exhausted: "bg-orange-100 text-orange-800",
   "pending approval": "bg-yellow-100 text-yellow-800",
+  rejected: "bg-red-100 text-red-800",
 };
