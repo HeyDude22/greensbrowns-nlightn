@@ -14,6 +14,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { toast } from "sonner";
+import { formatDateDDMMYYYY } from "@/lib/utils";
 import { VEHICLE_TYPE_LABELS } from "@/lib/constants";
 import type { VehicleTypeRate } from "@/types";
 
@@ -123,7 +124,7 @@ export function RatesTab({ rates, fetchRates }: RatesTabProps) {
                       />
                     </TableCell>
                     <TableCell className="text-sm text-muted-foreground">
-                      {new Date(rate.updated_at).toLocaleDateString()}
+                      {formatDateDDMMYYYY(rate.updated_at)}
                     </TableCell>
                   </TableRow>
                 );

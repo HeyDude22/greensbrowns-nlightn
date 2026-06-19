@@ -20,7 +20,7 @@ import { StatCard } from "@/components/shared/stat-card";
 import { PREPAID_STATUS_LABELS, PREPAID_STATUS_COLORS } from "@/lib/constants";
 import { CreditCard, Clock, Package, CalendarDays, Truck } from "lucide-react";
 import { toast } from "sonner";
-import { formatPaise } from "@/lib/utils";
+import { formatPaise, formatDateDDMMYYYY } from "@/lib/utils";
 import type { PrepaidPackage, PrepaidPackagePlan } from "@/types";
 
 interface AssignedPackageWithPlan {
@@ -137,7 +137,7 @@ export default function BwgPrepaidPage() {
 
       <div className="grid gap-4 md:grid-cols-2">
         <StatCard
-          title="Available Credits"
+          title="Remaining Credits"
           value={availableCredits}
           icon={CreditCard}
         />
@@ -185,7 +185,7 @@ export default function BwgPrepaidPage() {
                   <CardContent className="flex-1 space-y-3">
                     <div className="flex items-center gap-2 text-sm text-muted-foreground">
                       <Truck className="h-4 w-4" />
-                      <span>{plan.pickup_count} pickups</span>
+                      <span>{plan.pickup_count} pickup credits</span>
                     </div>
                     <div className="flex items-center gap-2 text-sm text-muted-foreground">
                       <CalendarDays className="h-4 w-4" />
@@ -227,9 +227,9 @@ export default function BwgPrepaidPage() {
               <TableHeader>
                 <TableRow>
                   <TableHead>Date</TableHead>
-                  <TableHead>Pickups</TableHead>
-                  <TableHead>Used</TableHead>
-                  <TableHead>Remaining</TableHead>
+                  <TableHead>Pickup Credits</TableHead>
+                  <TableHead>Used Credit</TableHead>
+                  <TableHead>Remaining Credits</TableHead>
                   <TableHead>Status</TableHead>
                   <TableHead>Expires</TableHead>
                 </TableRow>
@@ -238,7 +238,7 @@ export default function BwgPrepaidPage() {
                 {packages.map((pkg) => (
                   <TableRow key={pkg.id}>
                     <TableCell>
-                      {new Date(pkg.created_at).toLocaleDateString()}
+                      {formatDateDDMMYYYY(pkg.created_at)}
                     </TableCell>
                     <TableCell>{pkg.pickup_count}</TableCell>
                     <TableCell>{pkg.used_count}</TableCell>
@@ -257,7 +257,7 @@ export default function BwgPrepaidPage() {
                     </TableCell>
                     <TableCell>
                       {pkg.expires_at
-                        ? new Date(pkg.expires_at).toLocaleDateString()
+                        ? formatDateDDMMYYYY(pkg.expires_at)
                         : "\u2014"}
                     </TableCell>
                   </TableRow>

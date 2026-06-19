@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { StatCard } from "@/components/shared/stat-card";
 import { DashboardSkeleton } from "@/components/shared/loading-skeleton";
 import { PICKUP_STATUS_LABELS, PICKUP_STATUS_COLORS } from "@/lib/constants";
+import { formatDateDDMMYYYY } from "@/lib/utils";
 import { Truck, Calendar, Weight, FileText, CreditCard } from "lucide-react";
 import Link from "next/link";
 import type { Pickup } from "@/types";
@@ -128,7 +129,7 @@ export default function BwgDashboard() {
                   <div>
                     <p className="font-medium">{pickup.pickup_number}</p>
                     <p className="text-sm text-muted-foreground">
-                      {new Date(pickup.scheduled_date).toLocaleDateString()}
+                      {formatDateDDMMYYYY(pickup.scheduled_date)}
                     </p>
                   </div>
                   <Badge

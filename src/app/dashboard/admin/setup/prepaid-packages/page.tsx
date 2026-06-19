@@ -29,6 +29,7 @@ import { EmptyState } from "@/components/shared/empty-state";
 import { DashboardSkeleton } from "@/components/shared/loading-skeleton";
 import { Package, Plus, Pencil, ToggleLeft, ToggleRight } from "lucide-react";
 import { toast } from "sonner";
+import { formatDateDDMMYYYY } from "@/lib/utils";
 
 interface PrepaidPlan {
   id: string;
@@ -335,7 +336,7 @@ export default function SetupPrepaidPackagesPage() {
                       </Badge>
                     </TableCell>
                     <TableCell>
-                      {new Date(plan.created_at).toLocaleDateString()}
+                      {formatDateDDMMYYYY(plan.created_at)}
                     </TableCell>
                     <TableCell>
                       <div className="flex gap-2">

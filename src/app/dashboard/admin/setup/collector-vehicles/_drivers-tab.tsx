@@ -42,6 +42,7 @@ import {
   X,
 } from "lucide-react";
 import { toast } from "sonner";
+import { formatDateDDMMYYYY } from "@/lib/utils";
 import { extractLicenseDetails } from "@/lib/ocr";
 import { createDriver, updateDriver } from "./actions";
 import type { Driver, Vehicle } from "@/types";
@@ -333,11 +334,7 @@ export function DriversTab({ drivers, vehicles, fetchDrivers, fetchVehicles }: D
                       <TableCell>
                         {driver.license_valid_till ? (
                           <span className={`text-sm ${isExpired ? "text-red-600 font-medium" : ""}`}>
-                            {new Date(driver.license_valid_till).toLocaleDateString("en-IN", {
-                              day: "numeric",
-                              month: "short",
-                              year: "numeric",
-                            })}
+                            {formatDateDDMMYYYY(driver.license_valid_till)}
                           </span>
                         ) : (
                           <span className="text-sm text-muted-foreground">—</span>

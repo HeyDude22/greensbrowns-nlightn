@@ -14,6 +14,7 @@ import { KycUploadForm } from "@/components/shared/kyc-upload-form";
 import { ROLES, KYC_STATUS_COLORS } from "@/lib/constants";
 import { User, Pencil } from "lucide-react";
 import { toast } from "sonner";
+import { formatDateDDMMYYYY } from "@/lib/utils";
 import type { UserRole, KycStatus } from "@/types";
 
 export default function ProfilePage() {
@@ -112,7 +113,7 @@ export default function ProfilePage() {
             <div>
               <p className="text-sm text-muted-foreground">Member Since</p>
               <p className="font-medium">
-                {new Date(profile.created_at).toLocaleDateString()}
+                {formatDateDDMMYYYY(profile.created_at)}
               </p>
             </div>
           </CardContent>

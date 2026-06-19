@@ -1,6 +1,7 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { PICKUP_STATUS_LABELS, PICKUP_STATUS_COLORS } from "@/lib/constants";
+import { formatDateTimeDDMMYYYY } from "@/lib/utils";
 import { Clock } from "lucide-react";
 import type { PickupEvent } from "@/types";
 
@@ -33,7 +34,7 @@ export function PickupTimeline({ events }: PickupTimelineProps) {
                       {PICKUP_STATUS_LABELS[event.status]}
                     </Badge>
                     <span className="text-xs text-muted-foreground">
-                      {new Date(event.created_at).toLocaleString()}
+                      {formatDateTimeDDMMYYYY(event.created_at)}
                     </span>
                   </div>
                   {event.profile_name && (

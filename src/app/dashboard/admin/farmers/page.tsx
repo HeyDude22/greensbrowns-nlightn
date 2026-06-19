@@ -36,7 +36,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { COMPOST_TYPE_OPTIONS, PROCESSOR_TYPE_LABELS } from "@/lib/constants";
-import { buildOsmEmbedUrl } from "@/lib/utils";
+import { buildOsmEmbedUrl, formatDateDDMMYYYY } from "@/lib/utils";
 import {
   Sprout,
   Plus,
@@ -333,7 +333,7 @@ export default function AdminFarmersPage() {
                       </TableCell>
                       <TableCell>{farmer.pickup_count}</TableCell>
                       <TableCell>
-                        {new Date(farmer.created_at).toLocaleDateString()}
+                        {formatDateDDMMYYYY(farmer.created_at)}
                       </TableCell>
                       <TableCell>
                         <Badge

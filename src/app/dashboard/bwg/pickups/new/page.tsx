@@ -20,7 +20,6 @@ import { PageHeader } from "@/components/shared/page-header";
 import { DashboardSkeleton } from "@/components/shared/loading-skeleton";
 import { Camera, CreditCard, ImagePlus, X } from "lucide-react";
 import { toast } from "sonner";
-import Link from "next/link";
 
 const MAX_PHOTOS = 3;
 const MAX_FILE_SIZE = 2 * 1024 * 1024; // 2MB
@@ -209,6 +208,12 @@ export default function SchedulePickupPage() {
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!user || !orgId) return;
+    if (!prepaidPackage) {
+      toast.error(
+        "Your organization has no prepaid pickup credits. Please contact your admin to assign a prepaid package."
+      );
+      return;
+    }
     if (scheduledDate < minDate) {
       toast.error("Pickup date must be at least 2 days from today");
       return;
@@ -261,7 +266,11 @@ export default function SchedulePickupPage() {
       .single();
 
     if (error) {
-      toast.error("Failed to schedule pickup");
+      toast.error(
+        error.message?.includes("Insufficient prepaid credits")
+          ? "Your organization has no prepaid pickup credits. Please contact your admin to assign a prepaid package."
+          : "Failed to schedule pickup"
+      );
       setSubmitting(false);
       return;
     }
@@ -273,14 +282,6 @@ export default function SchedulePickupPage() {
       changed_by: user.id,
       notes: "Pickup scheduled",
     });
-
-    // Increment prepaid used_count
-    if (prepaidPackage) {
-      await supabase
-        .from("prepaid_packages")
-        .update({ used_count: prepaidPackage.used_count + 1 })
-        .eq("id", prepaidPackage.id);
-    }
 
     // Clean up photo previews
     photos.forEach((p) => URL.revokeObjectURL(p.preview));
@@ -299,18 +300,15 @@ export default function SchedulePickupPage() {
         <div className="rounded-lg border border-green-200 bg-green-50 p-4 flex items-center gap-3">
           <CreditCard className="h-5 w-5 text-green-600 shrink-0" />
           <p className="text-sm text-green-800">
-            <strong>{prepaidPackage.pickup_count - prepaidPackage.used_count}</strong> prepaid credits remaining. This pickup will use 1 credit.
+            <strong>{prepaidPackage.pickup_count - prepaidPackage.used_count}</strong> remaining credits. This pickup will use 1 pickup credit.
           </p>
         </div>
       ) : (
-        <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 flex items-center gap-3">
-          <CreditCard className="h-5 w-5 text-amber-600 shrink-0" />
-          <div className="text-sm text-amber-800">
-            No prepaid credits available. This will be a pay-per-pickup.{" "}
-            <Link href="/dashboard/bwg/prepaid" className="underline font-medium">
-              Buy prepaid credits
-            </Link>
-          </div>
+        <div className="rounded-lg border border-red-200 bg-red-50 p-4 flex items-center gap-3">
+          <CreditCard className="h-5 w-5 text-red-600 shrink-0" />
+          <p className="text-sm text-red-800">
+            Your organization has no prepaid pickup credits. Please contact your admin to assign a prepaid package.
+          </p>
         </div>
       )}
       <Card>
@@ -476,7 +474,7 @@ export default function SchedulePickupPage() {
               />
             </div>
             <div className="flex gap-2">
-              <Button type="submit" disabled={submitting}>
+              <Button type="submit" disabled={submitting || !prepaidPackage}>
                 {submitting ? "Scheduling..." : "Schedule Pickup"}
               </Button>
               <Button

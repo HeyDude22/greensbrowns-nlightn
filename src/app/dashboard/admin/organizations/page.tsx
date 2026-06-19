@@ -41,7 +41,7 @@ import {
 import { Textarea } from "@/components/ui/textarea";
 import { Building2, Package, ChevronDown, ChevronRight, CreditCard, Check, X, Plus, FileText, Upload, Loader2 } from "lucide-react";
 import { toast } from "sonner";
-import { formatPaise } from "@/lib/utils";
+import { formatPaise, formatDateDDMMYYYY } from "@/lib/utils";
 import type { PrepaidPackageStatus } from "@/types";
 import LocationPicker from "@/components/shared/location-picker-dynamic";
 
@@ -628,7 +628,7 @@ export default function AdminOrganizationsPage() {
                           <TableCell>{org.member_count}</TableCell>
                           <TableCell>{org.pickup_count}</TableCell>
                           <TableCell>
-                            {new Date(org.created_at).toLocaleDateString()}
+                            {formatDateDDMMYYYY(org.created_at)}
                           </TableCell>
                           <TableCell>
                             <Button
@@ -699,9 +699,7 @@ export default function AdminOrganizationsPage() {
                                             </Badge>
                                           </TableCell>
                                           <TableCell>
-                                            {new Date(
-                                              pkg.created_at
-                                            ).toLocaleDateString()}
+                                            {formatDateDDMMYYYY(pkg.created_at)}
                                           </TableCell>
                                           <TableCell>
                                             <Button
@@ -788,7 +786,7 @@ export default function AdminOrganizationsPage() {
                           </Badge>
                         </TableCell>
                         <TableCell>
-                          {new Date(pkg.created_at).toLocaleDateString()}
+                          {formatDateDDMMYYYY(pkg.created_at)}
                         </TableCell>
                         <TableCell>
                           {pkg.expires_at ? (
@@ -799,7 +797,7 @@ export default function AdminOrganizationsPage() {
                                   : ""
                               }
                             >
-                              {new Date(pkg.expires_at).toLocaleDateString()}
+                              {formatDateDDMMYYYY(pkg.expires_at)}
                             </span>
                           ) : (
                             <span className="text-muted-foreground">{"\u2014"}</span>

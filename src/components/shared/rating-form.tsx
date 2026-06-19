@@ -8,6 +8,7 @@ import { Label } from "@/components/ui/label";
 import { Star } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { toast } from "sonner";
+import { formatDateDDMMYYYY } from "@/lib/utils";
 
 interface RatingFormProps {
   pickupId: string;
@@ -140,7 +141,7 @@ export function RatingDisplay({ ratings }: RatingDisplayProps) {
                   by {r.role}
                 </span>
                 <span className="text-xs text-muted-foreground">
-                  {new Date(r.created_at).toLocaleDateString()}
+                  {formatDateDDMMYYYY(r.created_at)}
                 </span>
               </div>
               {r.comment && (

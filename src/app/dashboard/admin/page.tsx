@@ -13,6 +13,7 @@ import {
   PICKUP_STATUS_LABELS,
   PICKUP_STATUS_COLORS,
 } from "@/lib/constants";
+import { formatDateDDMMYYYY } from "@/lib/utils";
 import {
   Users,
   Truck,
@@ -402,7 +403,7 @@ export default function AdminDashboard() {
                         <p className="font-medium text-sm">{pickup.pickup_number}</p>
                         <p className="text-xs text-muted-foreground">
                           {pickup.organizations?.name || "Unknown org"} &middot;{" "}
-                          {new Date(pickup.scheduled_date).toLocaleDateString()}
+                          {formatDateDDMMYYYY(pickup.scheduled_date)}
                         </p>
                       </div>
                     </div>

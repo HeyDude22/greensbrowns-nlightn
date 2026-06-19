@@ -11,7 +11,7 @@ import { DashboardSkeleton } from "@/components/shared/loading-skeleton";
 import { TripCard } from "@/components/shared/trip-card";
 import { PickupDetailCard } from "@/components/shared/pickup-detail-card";
 import { PickupTimeline } from "@/components/shared/pickup-timeline";
-import { ArrowLeft, CheckCircle, FileText } from "lucide-react";
+import { ArrowLeft, CheckCircle, FileText, XCircle } from "lucide-react";
 import { toast } from "sonner";
 import Link from "next/link";
 import { RatingDisplay } from "@/components/shared/rating-form";
@@ -32,6 +32,7 @@ export default function AdminPickupDetailPage() {
   const [markingDelivered, setMarkingDelivered] = useState(false);
   const [generatingManifest, setGeneratingManifest] = useState(false);
   const [markingProcessed, setMarkingProcessed] = useState(false);
+  const [cancelling, setCancelling] = useState(false);
   const [ratings, setRatings] = useState<{ id: string; rating: number; comment: string | null; role: string; created_at: string }[]>([]);
 
   const refetchEvents = useCallback(async () => {
@@ -259,6 +260,40 @@ export default function AdminPickupDetailPage() {
     setMarkingProcessed(false);
   }
 
+  async function handleCancel() {
+    if (!user || !pickup) return;
+    if (pickup.status !== "requested") {
+      toast.error("Only unverified pickups can be cancelled");
+      return;
+    }
+    if (!window.confirm("Cancel this pickup request? Prepaid credits will be restored if applicable.")) {
+      return;
+    }
+    setCancelling(true);
+
+    const { error } = await supabase
+      .from("pickups")
+      .update({ status: "cancelled" })
+      .eq("id", pickup.id);
+
+    if (error) {
+      toast.error("Failed to cancel pickup");
+      setCancelling(false);
+      return;
+    }
+
+    await supabase.from("pickup_events").insert({
+      pickup_id: pickup.id,
+      status: "cancelled",
+      changed_by: user.id,
+      notes: "Cancelled by admin",
+    });
+
+    setPickup({ ...pickup, status: "cancelled" });
+    toast.success("Pickup cancelled");
+    setCancelling(false);
+  }
+
   if (userLoading || loading) return <DashboardSkeleton />;
   if (!pickup) {
     return (
@@ -301,6 +336,16 @@ export default function AdminPickupDetailPage() {
       <RatingDisplay ratings={ratings} />
 
       <div className="flex gap-3 justify-end">
+        {pickup.status === "requested" && (
+          <Button
+            variant="destructive"
+            onClick={handleCancel}
+            disabled={cancelling}
+          >
+            <XCircle className="mr-2 h-4 w-4" />
+            {cancelling ? "Cancelling..." : "Cancel Pickup"}
+          </Button>
+        )}
         {pickup.status === "picked_up" && (
           <Button
             onClick={handleMarkDelivered}

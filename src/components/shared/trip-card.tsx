@@ -3,6 +3,7 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { TRIP_STATUS_LABELS, TRIP_STATUS_COLORS } from "@/lib/constants";
+import { formatDateTimeDDMMYYYY } from "@/lib/utils";
 import { MapPin, Clock, Image as ImageIcon } from "lucide-react";
 import type { PickupTrip } from "@/types";
 
@@ -54,12 +55,12 @@ export function TripCard({ trips, showGeoData = false }: TripCardProps) {
             <div className="flex gap-4 text-sm text-muted-foreground">
               <div className="flex items-center gap-1">
                 <Clock className="h-3 w-3" />
-                Started: {new Date(trip.started_at).toLocaleString()}
+                Started: {formatDateTimeDDMMYYYY(trip.started_at)}
               </div>
               {trip.delivered_at && (
                 <div className="flex items-center gap-1">
                   <Clock className="h-3 w-3" />
-                  Delivered: {new Date(trip.delivered_at).toLocaleString()}
+                  Delivered: {formatDateTimeDDMMYYYY(trip.delivered_at)}
                 </div>
               )}
             </div>
@@ -98,7 +99,7 @@ export function TripCard({ trips, showGeoData = false }: TripCardProps) {
                     <div key={i} className="flex items-center gap-1 text-xs text-muted-foreground">
                       <MapPin className="h-3 w-3" />
                       {meta.lat?.toFixed(6)}, {meta.lng?.toFixed(6)}
-                      <span className="ml-2">{new Date(meta.timestamp).toLocaleString()}</span>
+                      <span className="ml-2">{formatDateTimeDDMMYYYY(meta.timestamp)}</span>
                     </div>
                   ))}
               </div>

@@ -43,6 +43,7 @@ import {
   Pencil,
 } from "lucide-react";
 import { toast } from "sonner";
+import { formatDateDDMMYYYY } from "@/lib/utils";
 import {
   VEHICLE_TYPE_LABELS,
   VEHICLE_TYPE_DETAILS,
@@ -726,7 +727,7 @@ export function VehiclesTab({ vehicles, fetchVehicles }: VehiclesTabProps) {
                         <p className="text-sm font-medium">{VEHICLE_DOC_LABELS[docType]}</p>
                         {doc?.expires_at && !hasExpiry && (
                           <p className={`text-xs ${isExpired ? "text-red-600" : "text-muted-foreground"}`}>
-                            {isExpired ? "Expired" : "Expires"}: {new Date(doc.expires_at).toLocaleDateString()}
+                            {isExpired ? "Expired" : "Expires"}: {formatDateDDMMYYYY(doc.expires_at)}
                           </p>
                         )}
                       </div>

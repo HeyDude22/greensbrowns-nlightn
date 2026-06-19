@@ -32,10 +32,11 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { Truck, Eye, CheckCircle, ShieldCheck, Plus, Camera, ImagePlus, X, Sparkles, Loader2, CheckCheck, List, Map, HelpCircle, Lock } from "lucide-react";
+import { Truck, Eye, CheckCircle, ShieldCheck, Plus, Camera, ImagePlus, X, Sparkles, Loader2, CheckCheck, List, Map, HelpCircle, Lock, XCircle } from "lucide-react";
 import Link from "next/link";
 import type { PickupStatus, VehicleType } from "@/types";
 import { toast } from "sonner";
+import { formatDateDDMMYYYY } from "@/lib/utils";
 import {
   optimizeJobs,
   type OptimizerPickup,
@@ -116,6 +117,7 @@ export default function AdminPickupsPage() {
   const [loading, setLoading] = useState(true);
   const [markingDeliveredId, setMarkingDeliveredId] = useState<string | null>(null);
   const [markingProcessedId, setMarkingProcessedId] = useState<string | null>(null);
+  const [cancellingPickupId, setCancellingPickupId] = useState<string | null>(null);
   const [verifyDialogOpen, setVerifyDialogOpen] = useState(false);
   const [verifyingPickup, setVerifyingPickup] = useState<PickupWithOrg | null>(null);
   const [verifyWeight, setVerifyWeight] = useState("");
@@ -251,6 +253,40 @@ export default function AdminPickupsPage() {
     );
     toast.success("Pickup marked as processed");
     setMarkingProcessedId(null);
+  }
+
+  async function handleCancelPickup(pickupId: string) {
+    if (!window.confirm("Cancel this pickup request? Prepaid credits will be restored if applicable.")) {
+      return;
+    }
+
+    setCancellingPickupId(pickupId);
+    const { error } = await supabase
+      .from("pickups")
+      .update({ status: "cancelled" })
+      .eq("id", pickupId);
+
+    if (error) {
+      toast.error("Failed to cancel pickup");
+      setCancellingPickupId(null);
+      return;
+    }
+
+    const { data: { user } } = await supabase.auth.getUser();
+    if (user) {
+      await supabase.from("pickup_events").insert({
+        pickup_id: pickupId,
+        status: "cancelled",
+        changed_by: user.id,
+        notes: "Cancelled by admin",
+      });
+    }
+
+    setPickups((prev) =>
+      prev.map((p) => (p.id === pickupId ? { ...p, status: "cancelled" } : p))
+    );
+    toast.success("Pickup cancelled");
+    setCancellingPickupId(null);
   }
 
   function openVerifyDialog(pickup: PickupWithOrg) {
@@ -890,7 +926,7 @@ export default function AdminPickupsPage() {
                         {pickup.organizations?.name || "—"}
                       </TableCell>
                       <TableCell>
-                        {new Date(pickup.scheduled_date).toLocaleDateString()}
+                        {formatDateDDMMYYYY(pickup.scheduled_date)}
                       </TableCell>
                       <TableCell>
                         {pickup.estimated_weight_kg ? (
@@ -935,14 +971,25 @@ export default function AdminPickupsPage() {
                       <TableCell>
                         <div className="flex items-center gap-1">
                           {pickup.status === "requested" && (
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              onClick={() => openVerifyDialog(pickup)}
-                            >
-                              <ShieldCheck className="mr-1 h-3 w-3" />
-                              Verify
-                            </Button>
+                            <>
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => openVerifyDialog(pickup)}
+                              >
+                                <ShieldCheck className="mr-1 h-3 w-3" />
+                                Verify
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => handleCancelPickup(pickup.id)}
+                                disabled={cancellingPickupId === pickup.id}
+                              >
+                                <XCircle className="mr-1 h-3 w-3" />
+                                {cancellingPickupId === pickup.id ? "..." : "Cancel"}
+                              </Button>
+                            </>
                           )}
                           {pickup.status === "picked_up" && (
                             <Button

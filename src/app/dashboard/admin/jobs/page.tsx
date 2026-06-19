@@ -59,6 +59,7 @@ import {
 import Link from "next/link";
 import type { JobStatus, PickupStatus, VehicleType } from "@/types";
 import { toast } from "sonner";
+import { formatDateDDMMYYYY } from "@/lib/utils";
 import {
   optimizeJobs,
   type OptimizerPickup,
@@ -476,10 +477,7 @@ export default function AdminJobsPage() {
                       {job.profiles?.full_name ?? "—"}
                     </TableCell>
                     <TableCell>
-                      {new Date(job.scheduled_date).toLocaleDateString("en-IN", {
-                        day: "numeric",
-                        month: "short",
-                      })}
+                      {formatDateDDMMYYYY(job.scheduled_date)}
                     </TableCell>
                     <TableCell>
                       {job.job_pickups?.[0]?.count ?? 0}
@@ -1722,7 +1720,7 @@ function PickupRow({
           )}
         </div>
         <div className="text-xs text-muted-foreground mt-0.5">
-          {pickup.scheduled_date}
+          {formatDateDDMMYYYY(pickup.scheduled_date)}
           {pickup.scheduled_slot ? ` · ${capitalize(pickup.scheduled_slot)}` : ""}
           {pickup.estimated_weight_kg
             ? ` · Est. ${pickup.estimated_weight_kg} kg`
