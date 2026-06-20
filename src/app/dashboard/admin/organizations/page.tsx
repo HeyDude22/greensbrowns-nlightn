@@ -442,8 +442,10 @@ export default function AdminOrganizationsPage() {
         address: newOrg.address.trim(),
         city: "Bengaluru",
         pincode: newOrg.pincode.trim() || null,
-        latitude: newOrg.lat,
-        longitude: newOrg.lng,
+        contact_name: newOrg.contact_name.trim() || null,
+        contact_phone: newOrg.contact_phone.trim() || null,
+        lat: newOrg.lat,
+        lng: newOrg.lng,
       })
       .select("id, name, org_type, address, city, pincode, created_at")
       .single();

@@ -19,12 +19,9 @@ import { NAV_ITEMS, ADMIN_NAV_GROUPS, ROLES } from "@/lib/constants";
 import type { NavItem } from "@/lib/constants";
 import { Lock } from "lucide-react";
 import type { UserRole } from "@/types/enums";
+import { BWG_ORG_REQUIRED_PREFIXES } from "@/lib/bwg-gated-routes";
 
-const BWG_GATED = [
-  "/dashboard/bwg/pickups",
-  "/dashboard/bwg/prepaid",
-  "/dashboard/bwg/compliance",
-];
+const BWG_GATED = [...BWG_ORG_REQUIRED_PREFIXES];
 
 interface AppSidebarProps {
   role: UserRole;
