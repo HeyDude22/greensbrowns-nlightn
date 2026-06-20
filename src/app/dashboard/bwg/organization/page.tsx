@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useEffect, useState, Suspense } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { useUser } from "@/hooks/use-user";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -27,6 +27,17 @@ import { jsPDF } from "jspdf";
 import { SERVICE_AGREEMENT_MD } from "@/lib/service-agreement";
 import { notifyAgreementSigned } from "@/lib/notifications";
 import type { Organization, OrgType } from "@/types";
+
+function SetupRequiredBanner() {
+  const searchParams = useSearchParams();
+  if (searchParams.get("setup") !== "required") return null;
+
+  return (
+    <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
+      Set up your organization before you can access Pickups, Prepaid, or Compliance.
+    </div>
+  );
+}
 
 export default function OrganizationPage() {
   const { user, loading: userLoading } = useUser();
@@ -277,6 +288,9 @@ export default function OrganizationPage() {
   // Create / Edit form
   return (
     <div className="space-y-6">
+      <Suspense fallback={null}>
+        <SetupRequiredBanner />
+      </Suspense>
       <PageHeader
         title={org ? "Edit Organization" : "Create Organization"}
         description={
