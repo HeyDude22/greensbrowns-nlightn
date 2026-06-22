@@ -16,6 +16,7 @@ import {
 } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { PICKUP_STATUS_LABELS, PICKUP_STATUS_COLORS } from "@/lib/constants";
+import { PICKUP_PIPELINE_ORDER, normalizePickupStatus } from "@/lib/pickup-status-flow";
 import { BarChart3, Truck, Weight, Recycle } from "lucide-react";
 import type { PickupStatus } from "@/types";
 
@@ -63,7 +64,8 @@ export default function AdminReportsPage() {
       // Status counts
       const counts: Record<string, number> = {};
       for (const p of pickups) {
-        counts[p.status] = (counts[p.status] || 0) + 1;
+        const key = normalizePickupStatus(p.status);
+        counts[key] = (counts[key] || 0) + 1;
       }
       setStatusCounts(counts);
 
@@ -87,7 +89,9 @@ export default function AdminReportsPage() {
 
   if (loading) return <DashboardSkeleton />;
 
-  const statuses: PickupStatus[] = ["requested", "assigned", "picked_up", "in_transit", "delivered", "processed", "cancelled"];
+  const statuses: PickupStatus[] = [
+    ...PICKUP_PIPELINE_ORDER.filter((s) => s !== "rejected"),
+  ];
 
   return (
     <div className="space-y-6">

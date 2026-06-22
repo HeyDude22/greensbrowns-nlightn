@@ -110,13 +110,10 @@ export function farmerDeliveryETAMessage(params: {
 }
 
 export const FARMER_CONFIRM_DELIVERY =
-  "Delivery arrived. Please confirm:\n\n1. Received\n2. Rejected (Mixed Waste)\n3. Rejected (Capacity Full)\n4. Rejected (Other Reason)\n\nReply with 1, 2, 3, or 4.";
+  "Delivery arrived. Tap Accept to confirm receipt.";
 
 export const FARMER_AUTO_ACCEPTED =
   "No response received. Delivery has been marked as accepted.";
-
-export const FARMER_WASTE_PROCESSED_PROMPT =
-  "Please confirm when you have finished processing the delivered waste.";
 
 // --- BWG WhatsApp messages ---
 

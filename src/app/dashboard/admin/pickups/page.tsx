@@ -195,15 +195,15 @@ export default function AdminPickupsPage() {
     fetchData();
   }, [supabase]);
 
-  async function handleMarkDelivered(pickupId: string) {
+  async function handleMarkArrivedProcessor(pickupId: string) {
     setMarkingDeliveredId(pickupId);
     const { error } = await supabase
       .from("pickups")
-      .update({ status: "delivered" })
+      .update({ status: "arrived_processor", delivered_at: new Date().toISOString() })
       .eq("id", pickupId);
 
     if (error) {
-      toast.error("Failed to mark as delivered");
+      toast.error("Failed to mark arrived at processor");
       setMarkingDeliveredId(null);
       return;
     }
@@ -212,16 +212,16 @@ export default function AdminPickupsPage() {
     if (user) {
       await supabase.from("pickup_events").insert({
         pickup_id: pickupId,
-        status: "delivered",
+        status: "arrived_processor",
         changed_by: user.id,
-        notes: "Marked delivered by admin after farmer verification",
+        notes: "Marked arrived at processor by admin",
       });
     }
 
     setPickups((prev) =>
-      prev.map((p) => (p.id === pickupId ? { ...p, status: "delivered" } : p))
+      prev.map((p) => (p.id === pickupId ? { ...p, status: "arrived_processor" } : p))
     );
-    toast.success("Pickup marked as delivered");
+    toast.success("Pickup marked as arrived at processor");
     setMarkingDeliveredId(null);
   }
 
@@ -991,18 +991,18 @@ export default function AdminPickupsPage() {
                               </Button>
                             </>
                           )}
-                          {pickup.status === "picked_up" && (
+                          {pickup.status === "in_transit" && (
                             <Button
                               size="sm"
                               variant="outline"
-                              onClick={() => handleMarkDelivered(pickup.id)}
+                              onClick={() => handleMarkArrivedProcessor(pickup.id)}
                               disabled={markingDeliveredId === pickup.id}
                             >
                               <CheckCircle className="mr-1 h-3 w-3" />
-                              {markingDeliveredId === pickup.id ? "..." : "Mark Delivered"}
+                              {markingDeliveredId === pickup.id ? "..." : "Mark Arrived"}
                             </Button>
                           )}
-                          {pickup.status === "delivered" && (
+                          {pickup.status === "accepted" && (
                             <Button
                               size="sm"
                               variant="outline"

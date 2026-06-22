@@ -169,8 +169,9 @@ export default function AdminJobsPage() {
 
   // Pickup status progression order for determining "most advanced"
   const PICKUP_STATUS_ORDER: PickupStatus[] = [
-    "requested", "verified", "assigned", "picked_up", "in_transit",
-    "delivered", "received", "processed", "rejected", "cancelled",
+    "requested", "verified", "assigned", "driver_accepted", "enroute",
+    "arrived_bwg", "full_pickup", "partial_pickup", "in_transit",
+    "arrived_processor", "accepted", "processed", "rejected", "cancelled",
   ];
 
   const fetchJobs = useCallback(async () => {

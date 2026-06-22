@@ -1,7 +1,7 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { PICKUP_STATUS_LABELS, PICKUP_STATUS_COLORS } from "@/lib/constants";
 import { formatDateTimeDDMMYYYY } from "@/lib/utils";
+import { pickupStatusColor, pickupStatusLabel } from "@/lib/pickup-status-flow";
 import { Clock } from "lucide-react";
 import type { PickupEvent } from "@/types";
 
@@ -10,17 +10,21 @@ interface PickupTimelineProps {
 }
 
 export function PickupTimeline({ events }: PickupTimelineProps) {
+  const sorted = [...events].sort(
+    (a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime(),
+  );
+
   return (
     <Card>
       <CardHeader>
         <CardTitle>Timeline</CardTitle>
       </CardHeader>
       <CardContent>
-        {events.length === 0 ? (
+        {sorted.length === 0 ? (
           <p className="text-sm text-muted-foreground">No events yet.</p>
         ) : (
           <div className="space-y-4">
-            {events.map((event) => (
+            {sorted.map((event) => (
               <div key={event.id} className="flex gap-3">
                 <div className="mt-1">
                   <Clock className="h-4 w-4 text-muted-foreground" />
@@ -29,9 +33,9 @@ export function PickupTimeline({ events }: PickupTimelineProps) {
                   <div className="flex items-center gap-2">
                     <Badge
                       variant="secondary"
-                      className={PICKUP_STATUS_COLORS[event.status]}
+                      className={pickupStatusColor(event.status)}
                     >
-                      {PICKUP_STATUS_LABELS[event.status]}
+                      {pickupStatusLabel(event.status)}
                     </Badge>
                     <span className="text-xs text-muted-foreground">
                       {formatDateTimeDDMMYYYY(event.created_at)}

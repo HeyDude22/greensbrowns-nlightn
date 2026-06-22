@@ -28,15 +28,15 @@ import {
   ArrowRight,
 } from "lucide-react";
 import type { PickupStatus } from "@/types";
+import {
+  PICKUP_PIPELINE_ORDER,
+  PICKUP_TERMINAL_STATUSES,
+  normalizePickupStatus,
+} from "@/lib/pickup-status-flow";
 
-const PIPELINE_STATUSES: PickupStatus[] = [
-  "requested",
-  "assigned",
-  "picked_up",
-  "in_transit",
-  "delivered",
-  "processed",
-];
+const PIPELINE_STATUSES: PickupStatus[] = PICKUP_PIPELINE_ORDER.filter(
+  (s) => !PICKUP_TERMINAL_STATUSES.includes(s) && s !== "rejected"
+);
 
 interface RecentPickup {
   id: string;
@@ -90,20 +90,15 @@ export default function AdminDashboard() {
       { count: unassignedCount },
       { count: kycCount },
       { count: prepaidCount },
-      { count: awaitingDeliveryCount },
+      { count: awaitingProcessorCount },
       { count: awaitingProcessingCount },
       // Overview stats
       { count: userCount },
       { count: activeCount },
       { count: orgCount },
       { count: monthlyCount },
-      // Pipeline counts
-      { count: requestedCount },
-      { count: assignedCount },
-      { count: pickedUpCount },
-      { count: inTransitCount },
-      { count: deliveredCount },
-      { count: processedCount },
+      // Pipeline — single fetch, count client-side
+      { data: pipelinePickups },
       // Recent pickups
       { data: pickups },
     ] = await Promise.all([
@@ -111,7 +106,7 @@ export default function AdminDashboard() {
       supabase
         .from("pickups")
         .select("*", { count: "exact", head: true })
-        .eq("status", "requested"),
+        .eq("status", "verified"),
       supabase
         .from("profiles")
         .select("*", { count: "exact", head: true })
@@ -123,11 +118,11 @@ export default function AdminDashboard() {
       supabase
         .from("pickups")
         .select("*", { count: "exact", head: true })
-        .eq("status", "picked_up"),
+        .eq("status", "in_transit"),
       supabase
         .from("pickups")
         .select("*", { count: "exact", head: true })
-        .eq("status", "delivered"),
+        .eq("status", "accepted"),
       // Stats
       supabase
         .from("profiles")
@@ -146,28 +141,7 @@ export default function AdminDashboard() {
       // Pipeline
       supabase
         .from("pickups")
-        .select("*", { count: "exact", head: true })
-        .eq("status", "requested"),
-      supabase
-        .from("pickups")
-        .select("*", { count: "exact", head: true })
-        .eq("status", "assigned"),
-      supabase
-        .from("pickups")
-        .select("*", { count: "exact", head: true })
-        .eq("status", "picked_up"),
-      supabase
-        .from("pickups")
-        .select("*", { count: "exact", head: true })
-        .eq("status", "in_transit"),
-      supabase
-        .from("pickups")
-        .select("*", { count: "exact", head: true })
-        .eq("status", "delivered"),
-      supabase
-        .from("pickups")
-        .select("*", { count: "exact", head: true })
-        .eq("status", "processed"),
+        .select("status"),
       // Recent pickups
       supabase
         .from("pickups")
@@ -180,7 +154,7 @@ export default function AdminDashboard() {
       unassignedPickups: unassignedCount || 0,
       kycPending: kycCount || 0,
       prepaidPending: prepaidCount || 0,
-      awaitingDelivery: awaitingDeliveryCount || 0,
+      awaitingDelivery: awaitingProcessorCount || 0,
       awaitingProcessing: awaitingProcessingCount || 0,
     });
 
@@ -191,14 +165,17 @@ export default function AdminDashboard() {
       monthlyPickups: monthlyCount || 0,
     });
 
-    setPipeline({
-      requested: requestedCount || 0,
-      assigned: assignedCount || 0,
-      picked_up: pickedUpCount || 0,
-      in_transit: inTransitCount || 0,
-      delivered: deliveredCount || 0,
-      processed: processedCount || 0,
-    });
+    const pipelineCounts: Record<string, number> = {};
+    for (const status of PIPELINE_STATUSES) {
+      pipelineCounts[status] = 0;
+    }
+    for (const row of pipelinePickups ?? []) {
+      const key = normalizePickupStatus(row.status);
+      if (key in pipelineCounts) {
+        pipelineCounts[key]++;
+      }
+    }
+    setPipeline(pipelineCounts);
 
     if (pickups) setRecentPickups(pickups as unknown as RecentPickup[]);
     setLoading(false);
@@ -247,7 +224,7 @@ export default function AdminDashboard() {
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
             {alerts.unassignedPickups > 0 && (
               <AlertCard
-                title="Unassigned Pickups"
+                title="Verified — Awaiting Assignment"
                 count={alerts.unassignedPickups}
                 icon={AlertTriangle}
                 href="/dashboard/admin/jobs"
@@ -274,7 +251,7 @@ export default function AdminDashboard() {
             )}
             {alerts.awaitingDelivery > 0 && (
               <AlertCard
-                title="Awaiting Delivery"
+                title="In Transit to Processor"
                 count={alerts.awaitingDelivery}
                 icon={PackageCheck}
                 href="/dashboard/admin/pickups"

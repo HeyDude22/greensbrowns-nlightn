@@ -1031,14 +1031,23 @@ export type Database = {
       payment_status: "pending" | "paid" | "overdue" | "cancelled"
       pickup_status:
         | "requested"
+        | "verified"
         | "assigned"
-        | "picked_up"
+        | "driver_accepted"
+        | "enroute"
+        | "arrived_bwg"
+        | "full_pickup"
+        | "partial_pickup"
         | "in_transit"
-        | "delivered"
-        | "received"
+        | "arrived_processor"
+        | "accepted"
         | "rejected"
         | "processed"
         | "cancelled"
+        | "picked_up"
+        | "delivered"
+        | "received"
+        | "scheduled"
       prepaid_package_status: "pending" | "approved" | "rejected" | "expired" | "exhausted"
       recurrence_type: "one_time" | "weekly" | "biweekly" | "monthly"
       ticket_status: "open" | "in_progress" | "resolved" | "closed"
@@ -1207,14 +1216,23 @@ export const Constants = {
       payment_status: ["pending", "paid", "overdue", "cancelled"],
       pickup_status: [
         "requested",
+        "verified",
         "assigned",
-        "picked_up",
+        "driver_accepted",
+        "enroute",
+        "arrived_bwg",
+        "full_pickup",
+        "partial_pickup",
         "in_transit",
-        "delivered",
-        "received",
+        "arrived_processor",
+        "accepted",
         "rejected",
         "processed",
         "cancelled",
+        "picked_up",
+        "delivered",
+        "received",
+        "scheduled",
       ],
       prepaid_package_status: ["pending", "approved", "rejected", "expired", "exhausted"],
       recurrence_type: ["one_time", "weekly", "biweekly", "monthly"],

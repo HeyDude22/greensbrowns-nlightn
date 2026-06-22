@@ -9,6 +9,7 @@ import {
   sendTemplateCollectorPickupReminder,
   sendTemplateFarmerDeliveryIncoming,
 } from "./wa-templates";
+import { getPickupWhatsAppContext } from "./pickup-context";
 
 const supabase = createAdminClient();
 
@@ -34,6 +35,12 @@ export async function sendJobAssignedNotification(pickupId: string) {
 
   if (!pickup) return;
 
+  const ctx = await getPickupWhatsAppContext(supabase, pickupId);
+  if (!ctx) {
+    console.warn("[Job Assigned] skip: could not load pickup context", { pickupId });
+    return;
+  }
+
   const org = pickup.organizations as unknown as {
     name: string;
     address: string;
@@ -54,10 +61,10 @@ export async function sendJobAssignedNotification(pickupId: string) {
   for (const vd of vehicleDrivers) {
     const driver = vd.drivers as unknown as { name: string; phone: string | null };
     if (driver?.phone) {
-      const messageId = await sendTemplateCollectorJobAssigned(driver.phone, {
+      const messageId = await sendTemplateCollectorJobAssigned(driver.phone, ctx, {
         orgName: org.name,
         address: org.address,
-        date: pickup.scheduled_date,
+        date: ctx.pickupDate,
         slot: pickup.scheduled_slot,
         lat: org.lat,
         lng: org.lng,
@@ -110,6 +117,9 @@ export async function sendPickupReminders(type: "24h" | "1h") {
   if (!pickups?.length) return;
 
   for (const pickup of pickups) {
+    const ctx = await getPickupWhatsAppContext(supabase, pickup.id);
+    if (!ctx) continue;
+
     const org = pickup.organizations as unknown as {
       name: string;
       address: string;
@@ -130,6 +140,7 @@ export async function sendPickupReminders(type: "24h" | "1h") {
           const messageId = await sendTemplateCollectorPickupReminder(
             driver.phone,
             type,
+            ctx,
             {
               orgName: org.name,
               slot: pickup.scheduled_slot,
@@ -194,6 +205,7 @@ export async function sendPickupReminders(type: "24h" | "1h") {
 
         const messageId = await sendTemplateFarmerDeliveryIncoming(
           farmerProfile.phone,
+          ctx,
           {
             slot: pickup.scheduled_slot,
             collectorName: driverName,
@@ -252,8 +264,13 @@ export async function sendBwgPickupWhatsApp(pickupId: string) {
     return;
   }
 
-  const messageId = await sendTemplateBwgPickupScheduled(phone, {
-    date: pickup.scheduled_date,
+  const ctx = await getPickupWhatsAppContext(supabase, pickupId);
+  if (!ctx) {
+    console.warn("[BWG WhatsApp] skip: could not load pickup context", { pickupId });
+    return;
+  }
+
+  const messageId = await sendTemplateBwgPickupScheduled(phone, ctx, {
     slot: pickup.scheduled_slot,
   });
   if (!messageId) {
@@ -279,8 +296,13 @@ export async function sendBwgDeliveryWhatsApp(pickupId: string) {
     return;
   }
 
-  const messageId = await sendTemplateBwgDeliveryConfirmed(phone, {
-    date: pickup.scheduled_date,
+  const ctx = await getPickupWhatsAppContext(supabase, pickupId);
+  if (!ctx) {
+    console.warn("[BWG WhatsApp] skip: could not load pickup context", { pickupId });
+    return;
+  }
+
+  const messageId = await sendTemplateBwgDeliveryConfirmed(phone, ctx, {
     slot: pickup.scheduled_slot,
   });
   if (!messageId) {

@@ -176,30 +176,33 @@ export default function AdminPickupDetailPage() {
     fetchData();
   }, [user, id, supabase]);
 
-  async function handleMarkDelivered() {
+  async function handleMarkArrivedProcessor() {
     if (!user || !pickup) return;
     setMarkingDelivered(true);
 
     const { error } = await supabase
       .from("pickups")
-      .update({ status: "delivered" })
+      .update({
+        status: "arrived_processor",
+        delivered_at: new Date().toISOString(),
+      })
       .eq("id", pickup.id);
 
     if (error) {
-      toast.error("Failed to mark as delivered");
+      toast.error("Failed to mark arrived at processor");
       setMarkingDelivered(false);
       return;
     }
 
     await supabase.from("pickup_events").insert({
       pickup_id: pickup.id,
-      status: "delivered",
+      status: "arrived_processor",
       changed_by: user.id,
-      notes: "Marked delivered by admin after farmer verification",
+      notes: "Marked arrived at processor by admin",
     });
 
-    setPickup({ ...pickup, status: "delivered" });
-    toast.success("Pickup marked as delivered");
+    setPickup({ ...pickup, status: "arrived_processor" });
+    toast.success("Pickup marked as arrived at processor");
     setMarkingDelivered(false);
   }
 
@@ -346,16 +349,16 @@ export default function AdminPickupDetailPage() {
             {cancelling ? "Cancelling..." : "Cancel Pickup"}
           </Button>
         )}
-        {pickup.status === "picked_up" && (
+        {pickup.status === "in_transit" && (
           <Button
-            onClick={handleMarkDelivered}
+            onClick={handleMarkArrivedProcessor}
             disabled={markingDelivered}
           >
             <CheckCircle className="mr-2 h-4 w-4" />
-            {markingDelivered ? "Marking..." : "Mark Delivered"}
+            {markingDelivered ? "Marking..." : "Mark Arrived at Processor"}
           </Button>
         )}
-        {pickup.status === "delivered" && (
+        {pickup.status === "accepted" && (
           <>
             <Button
               onClick={handleMarkProcessed}

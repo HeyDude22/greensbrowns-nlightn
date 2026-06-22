@@ -1,9 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
-import {
-  sendTemplateFarmerAutoAccepted,
-  sendTemplateFarmerWasteProcessed,
-} from "@/lib/whatsapp/wa-templates";
+import { sendTemplateFarmerAutoAccepted } from "@/lib/whatsapp/wa-templates";
+import { getPickupWhatsAppContext } from "@/lib/whatsapp/pickup-context";
 
 export async function GET(req: NextRequest) {
   const authHeader = req.headers.get("authorization");
@@ -13,11 +11,10 @@ export async function GET(req: NextRequest) {
 
   const supabase = createAdminClient();
 
-  // Find all pickups in "delivered" status where farmer hasn't responded
   const { data: pickups, error } = await supabase
     .from("pickups")
     .select("id, farmer_id")
-    .eq("status", "delivered")
+    .eq("status", "arrived_processor")
     .is("farmer_responded_at", null);
 
   if (error) {
@@ -32,11 +29,10 @@ export async function GET(req: NextRequest) {
   let count = 0;
 
   for (const pickup of pickups) {
-    // Update status to received
     const { error: updateError } = await supabase
       .from("pickups")
       .update({
-        status: "received" as string,
+        status: "accepted",
         farmer_responded_at: new Date().toISOString(),
       })
       .eq("id", pickup.id);
@@ -46,15 +42,13 @@ export async function GET(req: NextRequest) {
       continue;
     }
 
-    // Create pickup event
     await supabase.from("pickup_events").insert({
       pickup_id: pickup.id,
-      status: "received" as string,
+      status: "accepted",
       changed_by: pickup.farmer_id || "system",
-      notes: "Auto-accepted at midnight (no farmer response)",
+      notes: "Auto-accepted at midnight (no processor response)",
     });
 
-    // Notify farmer
     if (pickup.farmer_id) {
       const { data: profile } = await supabase
         .from("profiles")
@@ -63,8 +57,10 @@ export async function GET(req: NextRequest) {
         .single();
 
       if (profile?.phone) {
-        await sendTemplateFarmerAutoAccepted(profile.phone);
-        await sendTemplateFarmerWasteProcessed(profile.phone);
+        const ctx = await getPickupWhatsAppContext(supabase, pickup.id);
+        if (ctx) {
+          await sendTemplateFarmerAutoAccepted(profile.phone, ctx);
+        }
       }
     }
 
