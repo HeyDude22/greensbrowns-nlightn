@@ -325,7 +325,7 @@ export default function PickupDetailPage() {
 
       <RatingDisplay ratings={ratings} />
 
-      {["delivered", "received", "processed"].includes(pickup.status) && !hasUserRated && user && (
+      {["arrived_processor", "accepted", "processed"].includes(pickup.status) && !hasUserRated && user && (
         <RatingForm
           pickupId={pickup.id}
           userId={user.id}

@@ -9,7 +9,7 @@ export default function FarmerDashboard() {
         {[
           { title: "Incoming Deliveries", value: "—", icon: Truck },
           { title: "Compost Stock (kg)", value: "—", icon: Leaf },
-          { title: "Monthly Received", value: "—", icon: TrendingUp },
+          { title: "Monthly Accepted", value: "—", icon: TrendingUp },
           { title: "Total Batches", value: "—", icon: Package },
         ].map((stat) => (
           <Card key={stat.title}>

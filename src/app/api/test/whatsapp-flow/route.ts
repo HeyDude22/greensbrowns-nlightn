@@ -5,7 +5,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
  * End-to-end test for WhatsApp + Email notification flows.
  * Simulates webhook calls and verifies DB state at each step.
  *
- * GET /api/test/whatsapp-flow?step=seed|job-assigned|picked-up-prompt|picked-up-photo|delivered-prompt|delivered-photo|farmer-received|farmer-rejected|auto-accept|cleanup
+ * GET /api/test/whatsapp-flow?step=seed|job-assigned|driver-flow|processor-arrival|farmer-accepted|auto-accept|cleanup
  *
  * Run steps in order, or use step=all to run the full happy path.
  */
@@ -436,125 +436,108 @@ export async function GET(req: NextRequest) {
       }
     }
 
-    // === STEP 3: Collector sends "picked up" ===
-    if (step === "picked-up" || step === "all") {
-      const res1 = await simulateTextWebhook(
-        baseUrl,
-        TEST_COLLECTOR_PHONE,
-        "picked up"
-      );
-      assert(
-        "collector-picked-up-prompt",
-        res1.ok,
-        `Response ok: ${res1.ok}, status: ${res1.status}`
-      );
+    // === STEP 3: Collector driver flow through BWG pickup ===
+    if (step === "driver-flow" || step === "picked-up" || step === "all") {
+      for (const action of [
+        "driver_accepted",
+        "enroute",
+        "arrived_bwg",
+        "full_pickup",
+      ]) {
+        const res =
+          action === "full_pickup"
+            ? await simulateButtonWebhook(
+                baseUrl,
+                TEST_COLLECTOR_PHONE,
+                action,
+                "Full Pickup"
+              )
+            : await simulateButtonWebhook(
+                baseUrl,
+                TEST_COLLECTOR_PHONE,
+                action,
+                action
+              );
+        assert(`collector-${action}`, res.ok, `status: ${res.status}`);
+      }
 
-      // Simulate photo via Meta image message (handler downloads from Meta API using media ID)
-      const res2 = await simulateImageWebhook(
+      const photoRes = await simulateImageWebhook(
         baseUrl,
         TEST_COLLECTOR_PHONE,
         "test_pickup_photo_id"
       );
-      assert("collector-picked-up-photo", res2.ok, `Response ok: ${res2.ok}, status: ${res2.status}`);
+      assert("collector-bwg-pickup-photo", photoRes.ok, `status: ${photoRes.status}`);
 
       const statusAfterPickup = await getPickupStatus(testIds.pickupId!);
       assert(
-        "db-status-picked-up",
-        statusAfterPickup?.status === "picked_up",
+        "db-status-full-pickup",
+        statusAfterPickup?.status === "full_pickup",
         `Status: ${statusAfterPickup?.status}, photo: ${statusAfterPickup?.photo_before_url ? "yes" : "no"}`
       );
     }
 
-    // === STEP 4: Collector sends "delivered" ===
-    if (step === "delivered" || step === "all") {
-      const res1 = await simulateTextWebhook(
+    // === STEP 4: Collector in transit → arrived at processor ===
+    if (step === "processor-arrival" || step === "delivered" || step === "all") {
+      const transitRes = await simulateButtonWebhook(
         baseUrl,
         TEST_COLLECTOR_PHONE,
-        "delivered"
+        "in_transit",
+        "In Transit"
       );
-      assert(
-        "collector-delivered-prompt",
-        res1.ok,
-        `Response ok: ${res1.ok}, status: ${res1.status}`
-      );
+      assert("collector-in-transit", transitRes.ok, `status: ${transitRes.status}`);
 
-      const res2 = await simulateImageWebhook(
+      const arriveRes = await simulateButtonWebhook(
+        baseUrl,
+        TEST_COLLECTOR_PHONE,
+        "arrived_processor",
+        "Arrived at Processor"
+      );
+      assert("collector-arrived-processor-prompt", arriveRes.ok, `status: ${arriveRes.status}`);
+
+      const photoRes = await simulateImageWebhook(
         baseUrl,
         TEST_COLLECTOR_PHONE,
         "test_delivery_photo_id"
       );
-      assert("collector-delivered-photo", res2.ok, `Response ok: ${res2.ok}, status: ${res2.status}`);
+      assert("collector-arrived-processor-photo", photoRes.ok, `status: ${photoRes.status}`);
 
-      const statusAfterDelivery = await getPickupStatus(testIds.pickupId!);
+      const statusAfterArrival = await getPickupStatus(testIds.pickupId!);
       assert(
-        "db-status-delivered",
-        statusAfterDelivery?.status === "delivered",
-        `Status: ${statusAfterDelivery?.status}, delivered_at: ${statusAfterDelivery?.delivered_at ? "set" : "null"}`
+        "db-status-arrived-processor",
+        statusAfterArrival?.status === "arrived_processor",
+        `Status: ${statusAfterArrival?.status}, delivered_at: ${statusAfterArrival?.delivered_at ? "set" : "null"}`
       );
     }
 
-    // === STEP 5: Farmer confirms receipt (via interactive button) ===
-    if (step === "farmer-received" || step === "all") {
+    // === STEP 5: Processor accepts delivery (via interactive button) ===
+    if (step === "farmer-accepted" || step === "farmer-received" || step === "all") {
       const res = await simulateButtonWebhook(
         baseUrl,
         TEST_FARMER_PHONE,
-        "received",
-        "Received"
+        "accepted",
+        "Accept"
       );
       assert(
-        "farmer-received-reply",
+        "farmer-accepted-reply",
         res.ok,
         `Response ok: ${res.ok}, status: ${res.status}`
       );
 
-      const statusAfterReceived = await getPickupStatus(testIds.pickupId!);
+      const statusAfterAccepted = await getPickupStatus(testIds.pickupId!);
       assert(
-        "db-status-received",
-        statusAfterReceived?.status === "received",
-        `Status: ${statusAfterReceived?.status}, farmer_responded_at: ${statusAfterReceived?.farmer_responded_at ? "set" : "null"}`
-      );
-    }
-
-    // === STEP 5b (alternative): Farmer rejects (via interactive button) ===
-    if (step === "farmer-rejected") {
-      // Reset pickup to delivered for rejection test
-      await supabase
-        .from("pickups")
-        .update({
-          status: "delivered",
-          farmer_responded_at: null,
-          rejection_reason: null,
-        })
-        .eq("id", testIds.pickupId!);
-
-      const res = await simulateButtonWebhook(
-        baseUrl,
-        TEST_FARMER_PHONE,
-        "reject_mixed",
-        "Reject-Mixed Waste"
-      );
-      assert(
-        "farmer-rejected-reply",
-        res.ok,
-        `Response ok: ${res.ok}, status: ${res.status}`
-      );
-
-      const statusAfterReject = await getPickupStatus(testIds.pickupId!);
-      assert(
-        "db-status-rejected",
-        statusAfterReject?.status === "rejected" &&
-          statusAfterReject?.rejection_reason === "mixed_waste",
-        `Status: ${statusAfterReject?.status}, reason: ${statusAfterReject?.rejection_reason}`
+        "db-status-accepted",
+        statusAfterAccepted?.status === "accepted",
+        `Status: ${statusAfterAccepted?.status}, farmer_responded_at: ${statusAfterAccepted?.farmer_responded_at ? "set" : "null"}`
       );
     }
 
     // === STEP 6: Auto-accept test ===
     if (step === "auto-accept" || step === "all") {
-      // Reset pickup to delivered with no farmer response for auto-accept test
+      // Reset pickup to arrived_processor with no processor response for auto-accept test
       await supabase
         .from("pickups")
         .update({
-          status: "delivered",
+          status: "arrived_processor",
           farmer_responded_at: null,
           delivered_at: new Date().toISOString(),
         })
@@ -572,8 +555,8 @@ export async function GET(req: NextRequest) {
 
       const statusAfterAuto = await getPickupStatus(testIds.pickupId!);
       assert(
-        "db-status-auto-received",
-        statusAfterAuto?.status === "received",
+        "db-status-auto-accepted",
+        statusAfterAuto?.status === "accepted",
         `Status: ${statusAfterAuto?.status}, farmer_responded_at: ${statusAfterAuto?.farmer_responded_at ? "set" : "null"}`
       );
     }

@@ -119,7 +119,7 @@ export default function LandingPage() {
                 step: "03",
                 icon: Sprout,
                 title: "Processor Receives",
-                description: "Organic waste is delivered directly to a verified processor. They confirm receipt, and the waste becomes compost — closing the loop.",
+                description: "Organic waste is delivered directly to a verified processor. They accept delivery, and the waste becomes compost — closing the loop.",
                 color: "bg-accent-yellow",
               },
             ].map((item, i) => (
@@ -227,11 +227,11 @@ export default function LandingPage() {
                 </li>
                 <li className="flex items-start gap-2">
                   <ShieldCheck className="h-4 w-4 text-accent-yellow shrink-0 mt-0.5" />
-                  Accept or reject deliveries via WhatsApp
+                  Accept deliveries via WhatsApp
                 </li>
                 <li className="flex items-start gap-2">
                   <ShieldCheck className="h-4 w-4 text-accent-yellow shrink-0 mt-0.5" />
-                  Quality control with rejection reasons
+                  Auto-accept at midnight if no response
                 </li>
                 <li className="flex items-start gap-2">
                   <ShieldCheck className="h-4 w-4 text-accent-yellow shrink-0 mt-0.5" />

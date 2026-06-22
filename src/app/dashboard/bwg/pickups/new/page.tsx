@@ -151,7 +151,7 @@ export default function SchedulePickupPage() {
         .select("vehicle_id", { count: "exact", head: true })
         .eq("scheduled_date", date)
         .not("vehicle_id", "is", null)
-        .not("status", "in", '("cancelled","delivered","processed")');
+        .not("status", "in", '("cancelled","arrived_processor","accepted","processed")');
 
       const total = totalVehicles ?? 0;
       const busy = busyVehicles ?? 0;
