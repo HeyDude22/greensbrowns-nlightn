@@ -67,16 +67,8 @@ export function pickupReminder1hMessage(params: {
   ].join("\n");
 }
 
-export const PHOTO_PROMPT = "Please send a photo to confirm.";
-
 export const COLLECTOR_ACTION_PROMPT =
   "Tap a button to update your pickup status:";
-
-export const COLLECTOR_POST_PICKUP_PROMPT =
-  "Update your delivery status:";
-
-export const COLLECTOR_DELIVERED_PROMPT =
-  "When you reach the farm, tap Delivered:";
 
 // --- Processor messages ---
 
@@ -130,6 +122,38 @@ export function bwgPickupScheduledMessage(params: {
   ].join("\n");
 }
 
+export function bwgPickupRequestedMessage(params: {
+  pickupNumber: string;
+  orgName: string;
+  date: string;
+  slot: string | null;
+}): string {
+  return [
+    "Your pickup request has been received.",
+    `Request no.: ${params.pickupNumber}`,
+    `Organization: ${params.orgName}`,
+    `Date: ${params.date}`,
+    `Slot: ${slotLabel(params.slot)}`,
+    "",
+    "We will review and confirm your pickup. Tap Cancel below only if you want to withdraw this request (allowed until admin verification).",
+  ].join("\n");
+}
+
+export function bwgPickupCancelledMessage(params: {
+  pickupNumber: string;
+  date: string;
+  slot: string | null;
+}): string {
+  return [
+    "Your pickup request has been cancelled.",
+    `Request no.: ${params.pickupNumber}`,
+    `Date: ${params.date}`,
+    `Slot: ${slotLabel(params.slot)}`,
+    "",
+    "To schedule again, message us or use the GreensBrowns app.",
+  ].join("\n");
+}
+
 export function bwgDeliveryConfirmedMessage(params: {
   date: string;
   slot: string | null;
@@ -141,6 +165,22 @@ export function bwgDeliveryConfirmedMessage(params: {
     "Thank you for contributing to sustainable waste management!",
   ].join("\n");
 }
+
+export function bwgPartialPickupMessage(params: {
+  pickupNumber: string;
+  date: string;
+  slot: string | null;
+}): string {
+  return [
+    "GreensBrowns — Partial pickup at your site.",
+    `Pickup ${params.pickupNumber} was only partially collected on ${params.date} (${slotLabel(params.slot)}).`,
+    "",
+    "Please schedule a new pickup for the remaining waste in the app.",
+  ].join("\n");
+}
+
+export const ADMIN_PARTIAL_PICKUP_MESSAGE =
+  "Partial pickup reported. Please ensure the BWG schedules a new pickup, or create one in admin.";
 
 // --- BWG email templates (legacy) ---
 

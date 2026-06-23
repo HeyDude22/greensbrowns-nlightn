@@ -9,6 +9,7 @@ export type PickupStatus =
   | "verified"
   | "assigned"
   | "driver_accepted"
+  | "driver_not_accepted"
   | "enroute"
   | "arrived_bwg"
   | "full_pickup"

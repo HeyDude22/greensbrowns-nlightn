@@ -282,6 +282,12 @@ export default function AdminPickupsPage() {
       });
     }
 
+    fetch("/api/notify/pickup-cancelled", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ pickupId }),
+    }).catch(console.error);
+
     setPickups((prev) =>
       prev.map((p) => (p.id === pickupId ? { ...p, status: "cancelled" } : p))
     );
@@ -642,6 +648,12 @@ export default function AdminPickupsPage() {
       changed_by: user.id,
       notes: "Scheduled by admin",
     });
+
+    fetch("/api/notify/pickup-requested", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ pickupId: data.id }),
+    }).catch(console.error);
 
     // Prepend to list
     setPickups((prev) => [data as unknown as PickupWithOrg, ...prev]);

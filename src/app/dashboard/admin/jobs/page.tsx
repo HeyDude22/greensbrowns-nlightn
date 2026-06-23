@@ -153,6 +153,7 @@ interface DraftJobPickup {
   pickup_number: string;
   org_name: string;
   estimated_weight_kg: number | null;
+  status: PickupStatus;
 }
 
 // createJobFromSuggestion imported from "@/lib/create-job"
@@ -169,7 +170,7 @@ export default function AdminJobsPage() {
 
   // Pickup status progression order for determining "most advanced"
   const PICKUP_STATUS_ORDER: PickupStatus[] = [
-    "requested", "verified", "assigned", "driver_accepted", "enroute",
+    "requested", "verified", "assigned", "driver_accepted", "driver_not_accepted", "enroute",
     "arrived_bwg", "full_pickup", "partial_pickup", "in_transit",
     "arrived_processor", "accepted", "processed", "rejected", "cancelled",
   ];
@@ -662,7 +663,7 @@ function EditDraftJobDialog({
             .eq("role", "farmer"),
           supabase
             .from("job_pickups")
-            .select("id, pickup_id, pickups(pickup_number, estimated_weight_kg, organizations(name))")
+            .select("id, pickup_id, pickups(pickup_number, estimated_weight_kg, status, organizations(name))")
             .eq("job_id", job.id),
           supabase
             .from("jobs")
@@ -696,6 +697,7 @@ function EditDraftJobDialog({
             pickups: {
               pickup_number: string;
               estimated_weight_kg: number | null;
+              status: PickupStatus;
               organizations: { name: string } | null;
             };
           }[]).map((jp) => ({
@@ -704,6 +706,7 @@ function EditDraftJobDialog({
             pickup_number: jp.pickups.pickup_number,
             org_name: jp.pickups.organizations?.name ?? "",
             estimated_weight_kg: jp.pickups.estimated_weight_kg,
+            status: jp.pickups.status,
           })),
         );
       }
@@ -770,6 +773,10 @@ function EditDraftJobDialog({
   async function handleSave() {
     setSaving(true);
 
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+
     const { error } = await supabase
       .from("jobs")
       .update({
@@ -789,7 +796,55 @@ function EditDraftJobDialog({
       return;
     }
 
-    toast.success(job.status === "draft" ? "Draft updated" : "Job updated");
+    const reassignPickupIds =
+      selectedVehicle !== job.vehicle_id
+        ? jobPickups
+            .filter((jp) => jp.status === "driver_not_accepted")
+            .map((jp) => jp.pickup_id)
+        : [];
+
+    if (reassignPickupIds.length > 0 && selectedVehicle) {
+      const { error: pickupErr } = await supabase
+        .from("pickups")
+        .update({
+          status: "assigned",
+          vehicle_id: selectedVehicle,
+          farmer_id: selectedFarmer,
+        })
+        .in("id", reassignPickupIds);
+
+      if (pickupErr) {
+        toast.error("Job saved but failed to reassign pickups");
+        setSaving(false);
+        onUpdated();
+        return;
+      }
+
+      if (user) {
+        await supabase.from("pickup_events").insert(
+          reassignPickupIds.map((pid) => ({
+            pickup_id: pid,
+            status: "assigned",
+            changed_by: user.id,
+            notes: `Reassigned via ${job.job_number}`,
+          })),
+        );
+      }
+
+      fetch("/api/notify/job-assigned", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ pickupIds: reassignPickupIds, skipBwg: true }),
+      }).catch(console.error);
+    }
+
+    toast.success(
+      reassignPickupIds.length > 0
+        ? "Job reassigned — collector notified"
+        : job.status === "draft"
+          ? "Draft updated"
+          : "Job updated",
+    );
     setSaving(false);
     onUpdated();
   }
@@ -851,6 +906,10 @@ function EditDraftJobDialog({
     setConfirming(false);
     onUpdated();
   }
+
+  const hasDriverNotAccepted = jobPickups.some(
+    (jp) => jp.status === "driver_not_accepted",
+  );
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -1035,6 +1094,13 @@ function EditDraftJobDialog({
               />
             </div>
 
+            {hasDriverNotAccepted && job.status === "pending" && (
+              <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800">
+                Collector did not accept within 2 hours. Select a different vehicle
+                and save to reassign — the new collector will receive the job message.
+              </div>
+            )}
+
             {/* Pickups */}
             <div className="space-y-2">
               <Label>Pickups ({jobPickups.length})</Label>
@@ -1054,6 +1120,9 @@ function EditDraftJobDialog({
                         {" "}
                         · {jp.estimated_weight_kg} kg
                       </span>
+                    )}
+                    {jp.status === "driver_not_accepted" && (
+                      <span className="ml-2 text-red-600">· Driver not accepted</span>
                     )}
                   </div>
                   {job.status === "draft" && (

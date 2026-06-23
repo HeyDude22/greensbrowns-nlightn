@@ -438,41 +438,26 @@ export async function GET(req: NextRequest) {
 
     // === STEP 3: Collector driver flow through BWG pickup ===
     if (step === "driver-flow" || step === "picked-up" || step === "all") {
-      for (const action of [
-        "driver_accepted",
-        "enroute",
-        "arrived_bwg",
-        "full_pickup",
-      ]) {
-        const res =
-          action === "full_pickup"
-            ? await simulateButtonWebhook(
-                baseUrl,
-                TEST_COLLECTOR_PHONE,
-                action,
-                "Full Pickup"
-              )
-            : await simulateButtonWebhook(
-                baseUrl,
-                TEST_COLLECTOR_PHONE,
-                action,
-                action
-              );
+      for (const [action, label] of [
+        ["driver_accepted", "Accepted"],
+        ["enroute", "Enroute"],
+        ["arrived_bwg", "Arrived"],
+        ["full_pickup", "Full Pickup"],
+      ] as const) {
+        const res = await simulateButtonWebhook(
+          baseUrl,
+          TEST_COLLECTOR_PHONE,
+          action,
+          label
+        );
         assert(`collector-${action}`, res.ok, `status: ${res.status}`);
       }
-
-      const photoRes = await simulateImageWebhook(
-        baseUrl,
-        TEST_COLLECTOR_PHONE,
-        "test_pickup_photo_id"
-      );
-      assert("collector-bwg-pickup-photo", photoRes.ok, `status: ${photoRes.status}`);
 
       const statusAfterPickup = await getPickupStatus(testIds.pickupId!);
       assert(
         "db-status-full-pickup",
         statusAfterPickup?.status === "full_pickup",
-        `Status: ${statusAfterPickup?.status}, photo: ${statusAfterPickup?.photo_before_url ? "yes" : "no"}`
+        `Status: ${statusAfterPickup?.status}`
       );
     }
 
@@ -490,16 +475,9 @@ export async function GET(req: NextRequest) {
         baseUrl,
         TEST_COLLECTOR_PHONE,
         "arrived_processor",
-        "Arrived at Processor"
+        "Arrived"
       );
-      assert("collector-arrived-processor-prompt", arriveRes.ok, `status: ${arriveRes.status}`);
-
-      const photoRes = await simulateImageWebhook(
-        baseUrl,
-        TEST_COLLECTOR_PHONE,
-        "test_delivery_photo_id"
-      );
-      assert("collector-arrived-processor-photo", photoRes.ok, `status: ${photoRes.status}`);
+      assert("collector-arrived-processor", arriveRes.ok, `status: ${arriveRes.status}`);
 
       const statusAfterArrival = await getPickupStatus(testIds.pickupId!);
       assert(
@@ -514,8 +492,8 @@ export async function GET(req: NextRequest) {
       const res = await simulateButtonWebhook(
         baseUrl,
         TEST_FARMER_PHONE,
-        "accepted",
-        "Accept"
+        "processor_accepted",
+        "Accepted"
       );
       assert(
         "farmer-accepted-reply",

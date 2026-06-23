@@ -290,6 +290,12 @@ export default function SchedulePickupPage() {
       notes: "Pickup scheduled",
     });
 
+    fetch("/api/notify/pickup-requested", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ pickupId: data.id }),
+    }).catch(console.error);
+
     // Clean up photo previews
     photos.forEach((p) => URL.revokeObjectURL(p.preview));
 
