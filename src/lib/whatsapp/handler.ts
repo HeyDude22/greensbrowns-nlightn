@@ -1,21 +1,28 @@
 import { createAdminClient } from "@/lib/supabase/admin";
-import { downloadMedia } from "./client";
 import {
-  PHOTO_PROMPT,
   COLLECTOR_ACTION_PROMPT,
 } from "./templates";
 import {
+  normalizeCollectorWhatsAppChoice,
   normalizeFarmerWhatsAppChoice,
+  normalizeBwgWhatsAppChoice,
   sendTemplateFarmerDeliveryConfirm,
   sendTemplateFarmerDeliveryEta,
 } from "./wa-templates";
-import { sendBwgDeliveryWhatsApp } from "./notifications";
+import {
+  sendBwgDeliveryWhatsApp,
+  sendBwgPartialPickupWhatsApp,
+  sendBwgPickupCancelledWhatsApp,
+  sendBwgPickupCollectedWhatsApp,
+  notifyAdminsPartialPickup,
+  sendJobAssignedNotification,
+} from "./notifications";
 import { getPickupWhatsAppContext } from "./pickup-context";
 import { COLLECTOR_ACTIVE_STATUSES } from "@/lib/pickup-status-flow";
 import { getETA } from "@/lib/google/distance-matrix";
 import type { PickupStatus } from "@/types/enums";
-import type { WhatsAppHandlerReply } from "./types";
-import { COLLECTOR_NEXT_BUTTONS } from "./types";
+import type { WhatsAppButton, WhatsAppHandlerReply } from "./types";
+import { COLLECTOR_SESSION_NEXT } from "./types";
 
 const supabase = createAdminClient();
 
@@ -28,32 +35,53 @@ interface WebhookMessage {
   ButtonPayload?: string;
 }
 
-type PendingPhotoAction =
-  | { kind: "bwg_pickup"; load: "full_pickup" | "partial_pickup" }
-  | { kind: "processor_arrival" };
+type PickupRow = {
+  id: string;
+  status: PickupStatus;
+  organization_id: string;
+  farmer_id: string | null;
+  scheduled_date: string;
+  scheduled_slot: string | null;
+  estimated_weight_kg: number | null;
+  vehicle_id: string | null;
+  requested_by: string;
+};
 
-const pendingPhotoAction = new Map<string, PendingPhotoAction>();
+const COLLECTOR_ACTIONS: PickupStatus[] = [
+  "driver_accepted",
+  "enroute",
+  "arrived_bwg",
+  "full_pickup",
+  "partial_pickup",
+  "in_transit",
+  "arrived_processor",
+];
+
+const ALLOWED_FROM: Record<string, PickupStatus[]> = {
+  driver_accepted: ["assigned"],
+  enroute: ["assigned", "driver_accepted"],
+  arrived_bwg: ["enroute"],
+  full_pickup: ["arrived_bwg"],
+  partial_pickup: ["arrived_bwg"],
+  in_transit: ["full_pickup", "partial_pickup"],
+  arrived_processor: ["in_transit"],
+};
 
 function text(message: string): WhatsAppHandlerReply {
   return { kind: "text", message };
 }
 
-function buttons(
+function withSessionButtons(
   message: string,
-  buttonList: { id: string; title: string }[]
+  buttons: WhatsAppButton[],
 ): WhatsAppHandlerReply {
-  return { kind: "buttons", message, buttons: buttonList };
-}
-
-function buttonsForStatus(
-  pickup: { status: PickupStatus },
-  message?: string
-): WhatsAppHandlerReply {
-  const next = COLLECTOR_NEXT_BUTTONS[pickup.status];
-  if (!next) {
-    return text("No further actions available for this pickup.");
-  }
-  return buttons(message ?? COLLECTOR_ACTION_PROMPT, next);
+  return {
+    kind: "text",
+    message,
+    followUps: [
+      { kind: "buttons", message: COLLECTOR_ACTION_PROMPT, buttons },
+    ],
+  };
 }
 
 function extractPhone(from: string): string {
@@ -103,7 +131,7 @@ async function getCollectorVehicleIds(profileId: string): Promise<string[]> {
   return vds?.map((v) => v.vehicle_id) ?? [];
 }
 
-async function findActiveCollectorPickup(profileId: string) {
+async function findActiveCollectorPickup(profileId: string): Promise<PickupRow | null> {
   const vehicleIds = await getCollectorVehicleIds(profileId);
   if (!vehicleIds.length) return null;
 
@@ -118,7 +146,7 @@ async function findActiveCollectorPickup(profileId: string) {
     .limit(1)
     .single();
 
-  return data;
+  return data as PickupRow | null;
 }
 
 async function transitionPickup(
@@ -161,12 +189,7 @@ async function findAwaitingProcessorAcceptance(farmerId: string) {
   return data;
 }
 
-async function notifyProcessorETA(pickup: {
-  id: string;
-  farmer_id: string | null;
-  organization_id: string;
-  vehicle_id: string | null;
-}) {
+async function notifyProcessorETA(pickup: PickupRow) {
   if (!pickup.farmer_id) return;
 
   const [farmerResult, orgResult, vehicleResult] = await Promise.all([
@@ -229,167 +252,113 @@ async function notifyProcessorAcceptDelivery(farmerId: string, pickupId: string)
   await sendTemplateFarmerDeliveryConfirm(profile.phone, ctx);
 }
 
-async function handleCollectorStatusButton(
+function sessionReplyAfterStatus(
+  newStatus: PickupStatus,
+  message: string
+): WhatsAppHandlerReply {
+  const next = COLLECTOR_SESSION_NEXT[newStatus];
+  if (!next) return text(message);
+  return withSessionButtons(message, next);
+}
+
+async function handleCollectorAction(
   profileId: string,
-  phone: string,
-  action: string
+  action: PickupStatus
 ): Promise<WhatsAppHandlerReply> {
   const pickup = await findActiveCollectorPickup(profileId);
   if (!pickup) return text("No active pickup found.");
 
-  const expected = COLLECTOR_NEXT_BUTTONS[pickup.status as PickupStatus];
-  if (!expected?.some((b) => b.id === action)) {
-    return buttonsForStatus(
-      pickup as { status: PickupStatus },
-      "Please use the button for your current pickup step."
-    );
-  }
-
-  if (action === "full_pickup" || action === "partial_pickup") {
-    if (pickup.status !== "arrived_bwg") {
-      return text("Mark arrival at BWG before confirming pickup load.");
+  const allowedFrom = ALLOWED_FROM[action];
+  if (!allowedFrom?.includes(pickup.status)) {
+    const next = COLLECTOR_SESSION_NEXT[pickup.status];
+    if (next) {
+      return withSessionButtons(
+        "That action is not available for your current pickup step.",
+        next
+      );
     }
-    pendingPhotoAction.set(phone, {
-      kind: "bwg_pickup",
-      load: action as "full_pickup" | "partial_pickup",
-    });
-    return text(PHOTO_PROMPT);
-  }
-
-  if (action === "arrived_processor") {
-    if (pickup.status !== "in_transit") {
-      return text("Mark in transit before confirming arrival at processor.");
-    }
-    pendingPhotoAction.set(phone, { kind: "processor_arrival" });
-    return text(PHOTO_PROMPT);
+    return text("That action is not available for your current pickup step.");
   }
 
   const statusNotes: Record<string, string> = {
     driver_accepted: "Driver accepted job via WhatsApp",
     enroute: "Driver enroute to BWG via WhatsApp",
     arrived_bwg: "Driver arrived at BWG via WhatsApp",
+    full_pickup: "Full pickup confirmed via WhatsApp",
+    partial_pickup: "Partial pickup via WhatsApp — BWG and admin notified to schedule follow-up pickup",
     in_transit: "Driver in transit to processor via WhatsApp",
+    arrived_processor: "Driver arrived at processor via WhatsApp",
   };
+
+  const extraUpdate: Record<string, unknown> = {};
+  if (action === "arrived_processor") {
+    extraUpdate.delivered_at = new Date().toISOString();
+  }
 
   const ok = await transitionPickup(
     pickup.id,
     profileId,
-    action as PickupStatus,
-    statusNotes[action] ?? `Status updated to ${action} via WhatsApp`
+    action,
+    statusNotes[action] ?? `Status updated to ${action} via WhatsApp`,
+    extraUpdate
   );
 
   if (!ok) return text("Failed to update pickup status. Please try again.");
 
-  const updated = { ...pickup, status: action as PickupStatus };
+  const updated: PickupRow = { ...pickup, status: action };
+
+  if (action === "driver_accepted") {
+    return sessionReplyAfterStatus("driver_accepted", "Job accepted. Tap Enroute when heading to the BWG.");
+  }
+
+  if (action === "enroute") {
+    return sessionReplyAfterStatus("enroute", "Enroute confirmed. Tap Arrived when you reach the BWG.");
+  }
+
+  if (action === "arrived_bwg") {
+    return sessionReplyAfterStatus(
+      "arrived_bwg",
+      "Arrival at BWG confirmed. Select Full Pickup or Partial Pickup."
+    );
+  }
+
+  if (action === "full_pickup") {
+    await sendBwgPickupCollectedWhatsApp(pickup.id);
+    await notifyProcessorETA(updated);
+    return sessionReplyAfterStatus(
+      action,
+      "Full pickup recorded. BWG and processor have been notified. Tap In Transit when you leave.",
+    );
+  }
+
+  if (action === "partial_pickup") {
+    await sendBwgPartialPickupWhatsApp(pickup.id);
+    await notifyAdminsPartialPickup(pickup.id);
+    await notifyProcessorETA(updated);
+    return sessionReplyAfterStatus(
+      action,
+      "Partial pickup recorded. BWG and admin have been notified to schedule another pickup for the remainder. Tap In Transit when you leave.",
+    );
+  }
 
   if (action === "in_transit") {
-    await notifyProcessorETA(updated);
-    return buttonsForStatus(
-      updated,
-      "In transit confirmed. Notify processor when you arrive."
+    return sessionReplyAfterStatus(
+      "in_transit",
+      "In transit confirmed. Tap Arrived when you reach the processor."
     );
   }
 
-  return buttonsForStatus(updated, "Status updated.");
-}
-
-async function handleCollectorPhoto(
-  profileId: string,
-  phone: string,
-  mediaId: string
-): Promise<WhatsAppHandlerReply> {
-  const pending = pendingPhotoAction.get(phone);
-  if (!pending) {
-    return text("No photo action pending. Tap a status button first.");
-  }
-
-  const pickup = await findActiveCollectorPickup(profileId);
-  if (!pickup) {
-    pendingPhotoAction.delete(phone);
-    return text("No active pickup found.");
-  }
-
-  let photoBuffer: Buffer;
-  try {
-    photoBuffer = await downloadMedia(mediaId);
-  } catch (err) {
-    console.warn(`[WhatsApp] Photo download failed (${err}), using placeholder`);
-    photoBuffer = Buffer.from(
-      "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==",
-      "base64"
-    );
-  }
-
-  if (pending.kind === "bwg_pickup") {
-    if (pickup.status !== "arrived_bwg") {
-      pendingPhotoAction.delete(phone);
-      return text("Pickup load photo must follow arrival at BWG.");
+  if (action === "arrived_processor") {
+    await sendBwgDeliveryWhatsApp(pickup.id);
+    if (pickup.farmer_id) {
+      await notifyProcessorAcceptDelivery(pickup.farmer_id, pickup.id);
     }
-
-    const newStatus = pending.load;
-    const fileName = `${pickup.id}/${newStatus}-${Date.now()}.jpg`;
-
-    await supabase.storage
-      .from("pickup-photos")
-      .upload(fileName, photoBuffer, { contentType: "image/jpeg", upsert: true });
-
-    const { data: urlData } = supabase.storage
-      .from("pickup-photos")
-      .getPublicUrl(fileName);
-
-    const ok = await transitionPickup(
-      pickup.id,
-      profileId,
-      newStatus,
-      `${newStatus === "full_pickup" ? "Full" : "Partial"} pickup confirmed via WhatsApp`,
-      { photo_before_url: urlData.publicUrl }
-    );
-
-    pendingPhotoAction.delete(phone);
-    if (!ok) return text("Failed to save pickup photo.");
-
-    return buttonsForStatus(
-      { status: newStatus },
-      "Pickup photo saved. Tap In Transit when heading to the processor."
+    return text(
+      "Arrival at processor confirmed. BWG and processor have been notified. Waiting for processor to accept."
     );
   }
 
-  if (pickup.status !== "in_transit") {
-    pendingPhotoAction.delete(phone);
-    return text("Processor arrival photo must follow in transit status.");
-  }
-
-  const fileName = `${pickup.id}/arrived_processor-${Date.now()}.jpg`;
-
-  await supabase.storage
-    .from("pickup-photos")
-    .upload(fileName, photoBuffer, { contentType: "image/jpeg", upsert: true });
-
-  const { data: urlData } = supabase.storage
-    .from("pickup-photos")
-    .getPublicUrl(fileName);
-
-  const deliveredAt = new Date().toISOString();
-  const ok = await transitionPickup(
-    pickup.id,
-    profileId,
-    "arrived_processor",
-    "Driver arrived at processor via WhatsApp",
-    {
-      photo_after_url: urlData.publicUrl,
-      delivered_at: deliveredAt,
-    }
-  );
-
-  pendingPhotoAction.delete(phone);
-  if (!ok) return text("Failed to save arrival photo.");
-
-  if (pickup.farmer_id) {
-    await notifyProcessorAcceptDelivery(pickup.farmer_id, pickup.id);
-  }
-  await sendBwgDeliveryWhatsApp(pickup.id);
-
-  return text("Arrival confirmed! Waiting for processor to accept.");
+  return text("Status updated.");
 }
 
 async function handleProcessorResponse(
@@ -401,7 +370,7 @@ async function handleProcessorResponse(
 
   const choice = normalizeFarmerWhatsAppChoice(body);
 
-  if (choice === "1" || choice === "accepted") {
+  if (choice === "processor_accepted") {
     await supabase
       .from("pickups")
       .update({
@@ -420,7 +389,58 @@ async function handleProcessorResponse(
     return text("Thank you! Delivery has been marked as accepted.");
   }
 
-  return text("Please tap Accept to confirm delivery.");
+  return text("Please tap Accepted to confirm delivery.");
+}
+
+async function handleBwgCancelRequest(
+  profileId: string,
+): Promise<WhatsAppHandlerReply> {
+  const { data: memberships } = await supabase
+    .from("organization_members")
+    .select("organization_id")
+    .eq("user_id", profileId);
+
+  const orgIds = memberships?.map((m) => m.organization_id) ?? [];
+  if (!orgIds.length) {
+    return text("No organization linked to your account.");
+  }
+
+  const { data: pickup } = await supabase
+    .from("pickups")
+    .select("id, pickup_number, status")
+    .in("organization_id", orgIds)
+    .eq("status", "requested")
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (!pickup) {
+    return text("No pickup request found that can be cancelled.");
+  }
+
+  const { error } = await supabase
+    .from("pickups")
+    .update({ status: "cancelled" })
+    .eq("id", pickup.id)
+    .eq("status", "requested");
+
+  if (error) {
+    console.error("[WhatsApp] BWG cancel pickup failed", { pickupId: pickup.id, error });
+    return text("Failed to cancel pickup. Please try again or use the app.");
+  }
+
+  await supabase.from("pickup_events").insert({
+    pickup_id: pickup.id,
+    status: "cancelled",
+    changed_by: profileId,
+    notes: "Cancelled via WhatsApp",
+  });
+
+  await sendBwgPickupCancelledWhatsApp(pickup.id);
+
+  return text(
+    `Pickup ${pickup.pickup_number ?? pickup.id} has been cancelled.`,
+  );
 }
 
 export async function handleIncomingMessage(
@@ -433,46 +453,54 @@ export async function handleIncomingMessage(
     return text("Your phone number is not registered. Please contact admin.");
   }
 
-  const hasMedia = parseInt(body.NumMedia || "0") > 0;
-  const messageBody = body.Body?.trim().toLowerCase() || "";
-  const buttonPayload = body.ButtonPayload?.trim().toLowerCase() || "";
+  const buttonPayload = body.ButtonPayload?.trim() || "";
+  const messageBody = body.Body?.trim() || "";
 
   if (profile.role === "collector") {
-    if (hasMedia && body.MediaId) {
-      return handleCollectorPhoto(profile.id, phone, body.MediaId);
-    }
+    const action = normalizeCollectorWhatsAppChoice(
+      buttonPayload || messageBody
+    ) as PickupStatus;
 
-    const action = buttonPayload || messageBody.replace(/\s+/g, "_");
-    const knownActions = [
-      "driver_accepted",
-      "enroute",
-      "arrived_bwg",
-      "full_pickup",
-      "partial_pickup",
-      "in_transit",
-      "arrived_processor",
-    ];
-
-    if (knownActions.includes(action)) {
-      return handleCollectorStatusButton(profile.id, phone, action);
+    if (COLLECTOR_ACTIONS.includes(action)) {
+      return handleCollectorAction(profile.id, action);
     }
 
     const pickup = await findActiveCollectorPickup(profile.id);
     if (pickup) {
-      return buttonsForStatus(pickup as { status: PickupStatus });
+      if (pickup.status === "assigned") {
+        await sendJobAssignedNotification(pickup.id);
+        return text(
+          "Please tap Accepted on the job message above to accept this pickup.",
+        );
+      }
+
+      const next = COLLECTOR_SESSION_NEXT[pickup.status];
+      if (next) {
+        return withSessionButtons(COLLECTOR_ACTION_PROMPT, next);
+      }
     }
 
     return text("No active pickup assigned to you.");
   }
 
+  if (profile.role === "bwg") {
+    const choice = normalizeBwgWhatsAppChoice(buttonPayload || messageBody);
+    if (choice === "cancel_pickup") {
+      return handleBwgCancelRequest(profile.id);
+    }
+    return text(
+      "Tap Cancel on your pickup request message to withdraw it, or use the GreensBrowns app.",
+    );
+  }
+
   if (profile.role === "farmer") {
     const input = normalizeFarmerWhatsAppChoice(buttonPayload || messageBody);
 
-    if (["1", "accepted", "accept"].includes(input)) {
+    if (input === "processor_accepted") {
       return handleProcessorResponse(profile.id, input);
     }
 
-    return text("Please use the Accept button in your latest message to respond.");
+    return text("Please tap Accepted to confirm delivery.");
   }
 
   return text("Your role does not support WhatsApp interactions yet.");

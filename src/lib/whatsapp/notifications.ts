@@ -4,12 +4,18 @@ import { COLLECTOR_ACTION_PROMPT } from "./templates";
 import { COLLECTOR_PICKED_UP_BUTTON } from "./types";
 import {
   sendTemplateBwgDeliveryConfirmed,
+  sendTemplateBwgPickupCancelled,
+  sendTemplateBwgPickupCollected,
+  sendTemplateBwgPickupPartial,
+  sendTemplateBwgPickupRequested,
   sendTemplateBwgPickupScheduled,
   sendTemplateCollectorJobAssigned,
   sendTemplateCollectorPickupReminder,
   sendTemplateFarmerDeliveryIncoming,
+  sendTemplateAdminPickupPartial,
 } from "./wa-templates";
 import { getPickupWhatsAppContext } from "./pickup-context";
+import { formatDateDDMMYYYY } from "@/lib/utils";
 
 const supabase = createAdminClient();
 
@@ -112,7 +118,7 @@ export async function sendPickupReminders(type: "24h" | "1h") {
     )
     .eq("scheduled_date", dateStr)
     .eq("scheduled_slot", targetSlot)
-    .eq("status", "assigned");
+    .in("status", ["assigned", "driver_accepted"]);
 
   if (!pickups?.length) return;
 
@@ -249,6 +255,64 @@ async function resolveBwgPhone(pickupId: string): Promise<string | null> {
   return profile?.phone || org?.contact_phone || null;
 }
 
+export async function sendBwgPickupRequestedWhatsApp(pickupId: string) {
+  const { data: pickup } = await supabase
+    .from("pickups")
+    .select("id, pickup_number, scheduled_date, scheduled_slot, organizations(name)")
+    .eq("id", pickupId)
+    .single();
+
+  if (!pickup) return;
+
+  const phone = await resolveBwgPhone(pickupId);
+  if (!phone) {
+    console.warn(`[BWG WhatsApp] No phone for pickup ${pickupId} (profile or org contact)`);
+    return;
+  }
+
+  const org = pickup.organizations as unknown as { name: string };
+  const messageId = await sendTemplateBwgPickupRequested(phone, {
+    pickupNumber: pickup.pickup_number ?? pickupId,
+    orgName: org?.name ?? "—",
+    date: formatDateDDMMYYYY(pickup.scheduled_date),
+    slot: pickup.scheduled_slot,
+  });
+  if (!messageId) {
+    console.error("[BWG WhatsApp] pickup requested template failed", {
+      pickupId,
+      phone,
+    });
+  }
+}
+
+export async function sendBwgPickupCancelledWhatsApp(pickupId: string) {
+  const { data: pickup } = await supabase
+    .from("pickups")
+    .select("id, pickup_number, scheduled_date, scheduled_slot")
+    .eq("id", pickupId)
+    .single();
+
+  if (!pickup) return;
+
+  const phone = await resolveBwgPhone(pickupId);
+  if (!phone) {
+    console.warn(`[BWG WhatsApp] No phone for pickup ${pickupId} (profile or org contact)`);
+    return;
+  }
+
+  const messageId = await sendTemplateBwgPickupCancelled(phone, {
+    pickupNumber: pickup.pickup_number ?? pickupId,
+    date: formatDateDDMMYYYY(pickup.scheduled_date),
+    slot: pickup.scheduled_slot,
+  });
+  if (!messageId) {
+    console.error("[BWG WhatsApp] pickup cancelled template failed", {
+      pickupId,
+      phone,
+    });
+  }
+}
+
 export async function sendBwgPickupWhatsApp(pickupId: string) {
   const { data: pickup } = await supabase
     .from("pickups")
@@ -278,6 +342,110 @@ export async function sendBwgPickupWhatsApp(pickupId: string) {
       pickupId,
       phone,
     });
+  }
+}
+
+export async function sendBwgPickupCollectedWhatsApp(pickupId: string) {
+  const { data: pickup } = await supabase
+    .from("pickups")
+    .select("id, scheduled_slot")
+    .eq("id", pickupId)
+    .single();
+
+  if (!pickup) return;
+
+  const phone = await resolveBwgPhone(pickupId);
+  if (!phone) {
+    console.warn(`[BWG WhatsApp] No phone for pickup ${pickupId} (profile or org contact)`);
+    return;
+  }
+
+  const ctx = await getPickupWhatsAppContext(supabase, pickupId);
+  if (!ctx) {
+    console.warn("[BWG WhatsApp] skip: could not load pickup context", { pickupId });
+    return;
+  }
+
+  const messageId = await sendTemplateBwgPickupCollected(phone, ctx, {
+    slot: pickup.scheduled_slot,
+  });
+  if (!messageId) {
+    console.error("[BWG WhatsApp] pickup collected template failed", {
+      pickupId,
+      phone,
+    });
+  }
+}
+
+export async function sendBwgPartialPickupWhatsApp(pickupId: string) {
+  const { data: pickup } = await supabase
+    .from("pickups")
+    .select("id, pickup_number, scheduled_slot")
+    .eq("id", pickupId)
+    .single();
+
+  if (!pickup) return;
+
+  const phone = await resolveBwgPhone(pickupId);
+  if (!phone) {
+    console.warn(`[BWG WhatsApp] No phone for pickup ${pickupId} (profile or org contact)`);
+    return;
+  }
+
+  const ctx = await getPickupWhatsAppContext(supabase, pickupId);
+  if (!ctx) {
+    console.warn("[BWG WhatsApp] skip: could not load pickup context", { pickupId });
+    return;
+  }
+
+  const messageId = await sendTemplateBwgPickupPartial(phone, ctx, {
+    pickupNumber: pickup.pickup_number ?? ctx.jobNumber,
+    slot: pickup.scheduled_slot,
+  });
+  if (!messageId) {
+    console.error("[BWG WhatsApp] partial pickup template failed", {
+      pickupId,
+      phone,
+    });
+  }
+}
+
+export async function notifyAdminsPartialPickup(pickupId: string): Promise<void> {
+  const ctx = await getPickupWhatsAppContext(supabase, pickupId);
+  if (!ctx) {
+    console.warn("[PartialPickup] skip admin notify: no context", { pickupId });
+    return;
+  }
+
+  const { data: pickup } = await supabase
+    .from("pickups")
+    .select("pickup_number, organizations(name)")
+    .eq("id", pickupId)
+    .single();
+
+  if (!pickup) return;
+
+  const org = pickup.organizations as unknown as { name: string };
+  const pickupNumber = pickup.pickup_number ?? ctx.jobNumber;
+
+  const { data: admins } = await supabase
+    .from("profiles")
+    .select("phone")
+    .eq("role", "admin")
+    .not("phone", "is", null);
+
+  for (const admin of admins ?? []) {
+    if (!admin.phone) continue;
+    const messageId = await sendTemplateAdminPickupPartial(admin.phone, ctx, {
+      pickupNumber,
+      orgName: org?.name ?? "BWG",
+    });
+    if (!messageId) {
+      console.error("[PartialPickup] admin template failed", {
+        pickupId,
+        phone: admin.phone,
+      });
+    }
   }
 }
 

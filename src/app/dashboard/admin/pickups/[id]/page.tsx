@@ -292,6 +292,12 @@ export default function AdminPickupDetailPage() {
       notes: "Cancelled by admin",
     });
 
+    fetch("/api/notify/pickup-cancelled", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ pickupId: pickup.id }),
+    }).catch(console.error);
+
     setPickup({ ...pickup, status: "cancelled" });
     toast.success("Pickup cancelled");
     setCancelling(false);

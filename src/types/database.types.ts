@@ -1034,6 +1034,7 @@ export type Database = {
         | "verified"
         | "assigned"
         | "driver_accepted"
+        | "driver_not_accepted"
         | "enroute"
         | "arrived_bwg"
         | "full_pickup"
@@ -1219,6 +1220,7 @@ export const Constants = {
         "verified",
         "assigned",
         "driver_accepted",
+        "driver_not_accepted",
         "enroute",
         "arrived_bwg",
         "full_pickup",

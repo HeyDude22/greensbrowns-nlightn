@@ -3,7 +3,10 @@ import { sendJobAssignedNotification, sendBwgPickupWhatsApp } from "@/lib/whatsa
 
 export async function POST(req: NextRequest) {
   try {
-    const { pickupIds } = (await req.json()) as { pickupIds: string[] };
+    const { pickupIds, skipBwg } = (await req.json()) as {
+      pickupIds: string[];
+      skipBwg?: boolean;
+    };
     if (!pickupIds?.length) {
       return NextResponse.json({ error: "pickupIds required" }, { status: 400 });
     }
@@ -11,8 +14,8 @@ export async function POST(req: NextRequest) {
     await Promise.all(
       pickupIds.flatMap((id) => [
         sendJobAssignedNotification(id),
-        sendBwgPickupWhatsApp(id),
-      ])
+        ...(skipBwg ? [] : [sendBwgPickupWhatsApp(id)]),
+      ]),
     );
 
     return NextResponse.json({ ok: true });
