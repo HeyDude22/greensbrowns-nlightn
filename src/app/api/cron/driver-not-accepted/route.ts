@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { processDriverNotAcceptedTimeouts } from "@/lib/process-driver-not-accepted";
 
+// Cron schedule in vercel.json: daily (`30 7 * * *`) for Vercel Hobby.
+// On Pro, switch to hourly: `0 * * * *`.
+
 export async function GET(req: NextRequest) {
   const authHeader = req.headers.get("authorization");
   if (authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
