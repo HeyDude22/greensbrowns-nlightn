@@ -16,6 +16,7 @@ import {
   sendBwgPickupCollectedWhatsApp,
   notifyAdminsPartialPickup,
   sendJobAssignedNotification,
+  notifyVehicleBreakdown,
 } from "./notifications";
 import { getPickupWhatsAppContext } from "./pickup-context";
 import { COLLECTOR_ACTIVE_STATUSES } from "@/lib/pickup-status-flow";
@@ -76,11 +77,17 @@ function withSessionButtons(
   buttons: WhatsAppButton[],
 ): WhatsAppHandlerReply {
   return {
-    kind: "text",
-    message,
-    followUps: [
-      { kind: "buttons", message: COLLECTOR_ACTION_PROMPT, buttons },
-    ],
+    kind: "buttons",
+    message: `${message}\n\n${COLLECTOR_ACTION_PROMPT}`,
+    buttons,
+  };
+}
+
+function sessionButtonsOnly(buttons: WhatsAppButton[]): WhatsAppHandlerReply {
+  return {
+    kind: "buttons",
+    message: COLLECTOR_ACTION_PROMPT,
+    buttons,
   };
 }
 
@@ -141,6 +148,24 @@ async function findActiveCollectorPickup(profileId: string): Promise<PickupRow |
       "id, status, organization_id, farmer_id, scheduled_date, scheduled_slot, estimated_weight_kg, vehicle_id, requested_by"
     )
     .in("status", COLLECTOR_ACTIVE_STATUSES)
+    .in("vehicle_id", vehicleIds)
+    .order("scheduled_date", { ascending: true })
+    .limit(1)
+    .single();
+
+  return data as PickupRow | null;
+}
+
+async function findPickupForBreakdown(profileId: string): Promise<PickupRow | null> {
+  const vehicleIds = await getCollectorVehicleIds(profileId);
+  if (!vehicleIds.length) return null;
+
+  const { data } = await supabase
+    .from("pickups")
+    .select(
+      "id, status, organization_id, farmer_id, scheduled_date, scheduled_slot, estimated_weight_kg, vehicle_id, requested_by"
+    )
+    .in("status", ["driver_accepted", "enroute"])
     .in("vehicle_id", vehicleIds)
     .order("scheduled_date", { ascending: true })
     .limit(1)
@@ -308,11 +333,17 @@ async function handleCollectorAction(
   const updated: PickupRow = { ...pickup, status: action };
 
   if (action === "driver_accepted") {
-    return sessionReplyAfterStatus("driver_accepted", "Job accepted. Tap Enroute when heading to the BWG.");
+    return sessionReplyAfterStatus(
+      "driver_accepted",
+      "Job accepted. Tap Enroute when heading to the BWG, or Breakdown if your vehicle has a problem.",
+    );
   }
 
   if (action === "enroute") {
-    return sessionReplyAfterStatus("enroute", "Enroute confirmed. Tap Arrived when you reach the BWG.");
+    return sessionReplyAfterStatus(
+      "enroute",
+      "Enroute confirmed. Tap Arrived when you reach the BWG, or Breakdown if your vehicle has a problem.",
+    );
   }
 
   if (action === "arrived_bwg") {
@@ -359,6 +390,38 @@ async function handleCollectorAction(
   }
 
   return text("Status updated.");
+}
+
+async function handleCollectorBreakdown(
+  profileId: string,
+): Promise<WhatsAppHandlerReply> {
+  const pickup = await findPickupForBreakdown(profileId);
+  if (!pickup) {
+    const assigned = await findActiveCollectorPickup(profileId);
+    if (assigned?.status === "assigned") {
+      return text(
+        "Please tap Accepted on the job message before reporting a breakdown.",
+      );
+    }
+    return text("No pickup is active for a breakdown report.");
+  }
+
+  const ok = await transitionPickup(
+    pickup.id,
+    profileId,
+    "breakdown",
+    "Vehicle breakdown reported via WhatsApp",
+  );
+
+  if (!ok) {
+    return text("Failed to report breakdown. Please try again.");
+  }
+
+  await notifyVehicleBreakdown(pickup.id);
+
+  return text(
+    "Breakdown reported. Admin and the BWG have been notified. Stand by for reassignment.",
+  );
 }
 
 async function handleProcessorResponse(
@@ -457,9 +520,15 @@ export async function handleIncomingMessage(
   const messageBody = body.Body?.trim() || "";
 
   if (profile.role === "collector") {
-    const action = normalizeCollectorWhatsAppChoice(
-      buttonPayload || messageBody
-    ) as PickupStatus;
+    const choice = normalizeCollectorWhatsAppChoice(
+      buttonPayload || messageBody,
+    );
+
+    if (choice === "breakdown") {
+      return handleCollectorBreakdown(profile.id);
+    }
+
+    const action = choice as PickupStatus;
 
     if (COLLECTOR_ACTIONS.includes(action)) {
       return handleCollectorAction(profile.id, action);
@@ -476,7 +545,7 @@ export async function handleIncomingMessage(
 
       const next = COLLECTOR_SESSION_NEXT[pickup.status];
       if (next) {
-        return withSessionButtons(COLLECTOR_ACTION_PROMPT, next);
+        return sessionButtonsOnly(next);
       }
     }
 

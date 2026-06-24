@@ -13,6 +13,8 @@ import {
   sendTemplateCollectorPickupReminder,
   sendTemplateFarmerDeliveryIncoming,
   sendTemplateAdminPickupPartial,
+  sendTemplateAdminVehicleBreakdown,
+  sendTemplateBwgVehicleBreakdown,
 } from "./wa-templates";
 import { getPickupWhatsAppContext } from "./pickup-context";
 import { formatDateDDMMYYYY } from "@/lib/utils";
@@ -407,6 +409,74 @@ export async function sendBwgPartialPickupWhatsApp(pickupId: string) {
       pickupId,
       phone,
     });
+  }
+}
+
+export async function notifyVehicleBreakdown(pickupId: string): Promise<void> {
+  const ctx = await getPickupWhatsAppContext(supabase, pickupId);
+  if (!ctx) {
+    console.warn("[VehicleBreakdown] skip notify: no context", { pickupId });
+    return;
+  }
+
+  const { data: pickup } = await supabase
+    .from("pickups")
+    .select(
+      "pickup_number, scheduled_slot, vehicle_id, organizations(name)",
+    )
+    .eq("id", pickupId)
+    .single();
+
+  if (!pickup) return;
+
+  const org = pickup.organizations as unknown as { name: string };
+  let regNumber = "Unknown vehicle";
+
+  if (pickup.vehicle_id) {
+    const { data: vehicle } = await supabase
+      .from("vehicles")
+      .select("registration_number")
+      .eq("id", pickup.vehicle_id)
+      .single();
+
+    if (vehicle?.registration_number) {
+      regNumber = vehicle.registration_number;
+    }
+  }
+
+  const { data: admins } = await supabase
+    .from("profiles")
+    .select("phone")
+    .eq("role", "admin")
+    .not("phone", "is", null);
+
+  for (const admin of admins ?? []) {
+    if (!admin.phone) continue;
+    const messageId = await sendTemplateAdminVehicleBreakdown(admin.phone, ctx, {
+      orgName: org?.name ?? "BWG",
+      regNumber,
+    });
+    if (!messageId) {
+      console.error("[VehicleBreakdown] admin template failed", {
+        pickupId,
+        phone: admin.phone,
+      });
+    }
+  }
+
+  const phone = await resolveBwgPhone(pickupId);
+  if (!phone) {
+    console.warn(`[VehicleBreakdown] No BWG phone for pickup ${pickupId}`);
+    return;
+  }
+
+  const messageId = await sendTemplateBwgVehicleBreakdown(phone, ctx, {
+    pickupNumber: pickup.pickup_number ?? ctx.jobNumber,
+    slot: pickup.scheduled_slot,
+    regNumber,
+  });
+  if (!messageId) {
+    console.error("[VehicleBreakdown] BWG template failed", { pickupId, phone });
   }
 }
 

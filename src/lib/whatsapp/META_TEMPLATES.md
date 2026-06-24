@@ -14,19 +14,21 @@ Template names must match `WA_TEMPLATE_NAMES` in `wa-templates.ts`. Button paylo
 |---|-------------------|-----------|-----------|---------|-------------------------|
 | 1 | `collector_job_assigned` | Collector | Job confirmed / reassigned | **Accepted** | `jobAssignedMessage` |
 | 2 | `collector_pickup_reminder_24h` | Collector | 24h before pickup slot | None | `pickupReminder24hMessage` |
-| 3 | `collector_pickup_reminder_1h` | Collector | 1h before pickup slot | **Enroute** | `pickupReminder1hMessage` |
+| 3 | `collector_pickup_reminder_1h` | Collector | 1h before pickup slot | **Enroute** · **Breakdown** | `pickupReminder1hMessage` |
 | 4 | `admin_driver_not_accepted` | Admin | Collector did not accept within 120 min | None | *(wa-templates only)* |
-| 5 | `bwg_pickup_requested` | BWG | Pickup scheduled (`requested`) | **Cancel** | `bwgPickupRequestedMessage` |
-| 6 | `bwg_pickup_cancelled_` | BWG | Pickup cancelled before verification | None | `bwgPickupCancelledMessage` |
-| 7 | `bwg_pickup_scheduled` | BWG | Job assigned to vehicle | None | `bwgPickupScheduledMessage` |
-| 8 | `bwg_pickup_collected` | BWG | Collector confirms **full** pickup | None | *(wa-templates only)* |
-| 9 | `bwg_pickup_partial` | BWG | Collector confirms **partial** pickup | None | `bwgPartialPickupMessage` |
-| 10 | `admin_pickup_partial` | Admin | Collector confirms **partial** pickup | None | `ADMIN_PARTIAL_PICKUP_MESSAGE` |
-| 11 | `bwg_delivery_confirmed` | BWG | Collector arrives at processor | None | `bwgDeliveryConfirmedMessage` |
-| 12 | `farmer_delivery_incoming` | Processor | 24h before expected delivery | None | `farmerDeliveryIncomingMessage` |
-| 13 | `farmer_delivery_eta` | Processor | After full or partial pickup | None | `farmerDeliveryETAMessage` |
-| 14 | `farmer_delivery_confirm` | Processor | Collector arrives at processor | **Accepted** | `FARMER_CONFIRM_DELIVERY` |
-| 15 | `farmer_auto_accepted` | Processor | Midnight cron, no response | None | `FARMER_AUTO_ACCEPTED` |
+| 5 | `admin_vehicle_breakdown` | Admin | Collector reports vehicle breakdown | None | `ADMIN_VEHICLE_BREAKDOWN_MESSAGE` |
+| 6 | `bwg_vehicle_breakdown` | BWG | Collector reports vehicle breakdown | None | `bwgVehicleBreakdownMessage` |
+| 7 | `bwg_pickup_requested` | BWG | Pickup scheduled (`requested`) | **Cancel** | `bwgPickupRequestedMessage` |
+| 8 | `bwg_pickup_cancelled_` | BWG | Pickup cancelled before verification | None | `bwgPickupCancelledMessage` |
+| 9 | `bwg_pickup_scheduled` | BWG | Job assigned to vehicle | None | `bwgPickupScheduledMessage` |
+| 10 | `bwg_pickup_collected` | BWG | Collector confirms **full** pickup | None | *(wa-templates only)* |
+| 11 | `bwg_pickup_partial` | BWG | Collector confirms **partial** pickup | None | `bwgPartialPickupMessage` |
+| 12 | `admin_pickup_partial` | Admin | Collector confirms **partial** pickup | None | `ADMIN_PARTIAL_PICKUP_MESSAGE` |
+| 13 | `bwg_delivery_confirmed` | BWG | Collector arrives at processor | None | `bwgDeliveryConfirmedMessage` |
+| 14 | `farmer_delivery_incoming` | Processor | 24h before expected delivery | None | `farmerDeliveryIncomingMessage` |
+| 15 | `farmer_delivery_eta` | Processor | After full or partial pickup | None | `farmerDeliveryETAMessage` |
+| 16 | `farmer_delivery_confirm` | Processor | Collector arrives at processor | **Accepted** | `FARMER_CONFIRM_DELIVERY` |
+| 17 | `farmer_auto_accepted` | Processor | Midnight cron, no response | None | `FARMER_AUTO_ACCEPTED` |
 
 **Not Meta templates:** Collector mid-flow buttons (Enroute → Arrived → Full/Partial → In Transit → Arrived) are **session interactive messages** sent via API within the 24h window. Prompt text: `COLLECTOR_ACTION_PROMPT` in `templates.ts`.
 
@@ -39,14 +41,14 @@ Template names must match `WA_TEMPLATE_NAMES` in `wa-templates.ts`. Button paylo
          └─[Meta] bwg_pickup_cancelled_ (on cancel while requested)
 
 [Meta] collector_job_assigned     Accepted → driver_accepted
-         └─[Session] Enroute → enroute
+         └─[Session] Enroute → enroute · Breakdown → breakdown
 
 [Meta] bwg_pickup_scheduled (job assigned)
 
 [Meta] collector_pickup_reminder_24h   (no buttons)
 
-[Meta] collector_pickup_reminder_1h    Enroute → enroute
-         └─[Session] Arrived → arrived_bwg
+[Meta] collector_pickup_reminder_1h    Enroute → enroute · Breakdown → breakdown
+         └─[Session] Arrived → arrived_bwg · Breakdown → breakdown
 
 [Session] Full Pickup → full_pickup
          ├─ [Meta] bwg_pickup_collected + farmer_delivery_eta
@@ -63,6 +65,8 @@ Template names must match `WA_TEMPLATE_NAMES` in `wa-templates.ts`. Button paylo
 
 [Meta] admin_driver_not_accepted → admin reassigns
 
+[Meta] admin_vehicle_breakdown + bwg_vehicle_breakdown → admin reassigns
+
 [Meta] farmer_auto_accepted (cron, no response by midnight)
 ```
 
@@ -77,8 +81,10 @@ Template names must match `WA_TEMPLATE_NAMES` in `wa-templates.ts`. Button paylo
 | `bwg_pickup_requested` | **Cancel** | `cancel_pickup` |
 | `collector_job_assigned` | **Accepted** | `driver_accepted` |
 | `collector_pickup_reminder_24h` | *(none)* | — |
-| `collector_pickup_reminder_1h` | **Enroute** | `enroute` |
+| `collector_pickup_reminder_1h` | **Enroute** · **Breakdown** | `enroute` · `breakdown` |
 | `farmer_delivery_confirm` | **Accepted** | `processor_accepted` |
+
+**Breakdown** is only accepted when pickup status is `driver_accepted` or `enroute` (not from `assigned`). If the collector taps Breakdown before accepting, they are prompted to accept first.
 
 **Do not add to Meta:** Picked Up, In Transit, Delivered, Reject / Mixed waste / Capacity / Other. **No Enroute button on `collector_pickup_reminder_24h`.**
 
@@ -86,8 +92,8 @@ Template names must match `WA_TEMPLATE_NAMES` in `wa-templates.ts`. Button paylo
 
 | After status | Button label(s) | Payload(s) |
 |--------------|-----------------|------------|
-| `driver_accepted` | Enroute | `enroute` |
-| `enroute` | Arrived | `arrived_bwg` |
+| `driver_accepted` | Enroute · Breakdown | `enroute` · `breakdown` |
+| `enroute` | Arrived · Breakdown | `arrived_bwg` · `breakdown` |
 | `arrived_bwg` | Full Pickup · Partial Pickup | `full_pickup` · `partial_pickup` |
 | `full_pickup` or `partial_pickup` | In Transit | `in_transit` |
 | `in_transit` | Arrived | `arrived_processor` |
@@ -202,6 +208,7 @@ Location: {googleMapsLink}
 | Button | Payload |
 |--------|---------|
 | **Enroute** | `enroute` |
+| **Breakdown** | `breakdown` |
 
 **Body variables:** 5
 
@@ -263,7 +270,68 @@ Sent to all admin profiles with a phone number.
 
 ---
 
-## 5. `bwg_pickup_requested` (BWG)
+Sent to all admin profiles with a phone number.
+
+---
+
+## 5. `admin_vehicle_breakdown` (Admin)
+
+**When sent:** Collector reports vehicle breakdown via WhatsApp (`status` → `breakdown`).
+
+**Buttons:** None
+
+**Body variables:** 4
+
+```
+GreensBrowns — Vehicle breakdown reported.
+BWG: {{1}}
+Pickup date: {{2}}
+Vehicle: {{3}}
+
+Please reassign the job in the admin dashboard.
+
+Job {{4}}
+```
+
+| Var | Maps to |
+|-----|---------|
+| {{1}} | BWG name |
+| {{2}} | Pickup date (DD/MM/YYYY) |
+| {{3}} | Vehicle registration number |
+| {{4}} | Job number |
+
+Sent to all admin profiles with a phone number.
+
+---
+
+## 6. `bwg_vehicle_breakdown` (BWG)
+
+**When sent:** Collector reports vehicle breakdown via WhatsApp.
+
+**Buttons:** None
+
+**Body variables:** 5
+
+```
+GreensBrowns — Vehicle breakdown reported for your scheduled pickup.
+Pickup {{1}} on {{2}} ({{3}}) cannot be completed by vehicle {{4}}.
+
+We will reassign and notify you when a new vehicle is on the way.
+
+Job {{5}}
+```
+
+| Var | Maps to |
+|-----|---------|
+| {{1}} | Pickup number |
+| {{2}} | Pickup date (DD/MM/YYYY) |
+| {{3}} | Time slot label |
+| {{4}} | Vehicle registration number |
+| {{5}} | Job number |
+
+---
+
+## 7. `bwg_pickup_requested` (BWG)
 
 **When sent:** BWG or admin schedules a pickup (`status: requested`).
 
@@ -298,7 +366,7 @@ Tapping **Cancel** cancels the most recent `requested` pickup for the BWG's orga
 
 ---
 
-## 6. `bwg_pickup_cancelled_` (BWG)
+## 8. `bwg_pickup_cancelled_` (BWG)
 
 **When sent:** Pickup cancelled while still `requested` (BWG app, admin app, or WhatsApp Cancel button).
 
@@ -327,7 +395,7 @@ To schedule again, message us or use the GreensBrowns app.
 
 ---
 
-## 7. `bwg_pickup_scheduled` (BWG)
+## 9. `bwg_pickup_scheduled` (BWG)
 
 **When sent:** Job assigned to vehicle (on job create / confirm).
 
@@ -363,7 +431,7 @@ A vehicle has been assigned. You will be notified once the waste is delivered.
 
 ---
 
-## 8. `bwg_pickup_collected` (BWG)
+## 10. `bwg_pickup_collected` (BWG)
 
 **When sent:** Collector taps **Full Pickup** only.
 
@@ -390,7 +458,7 @@ Job {{3}} | {{4}}
 
 ---
 
-## 9. `bwg_pickup_partial` (BWG)
+## 11. `bwg_pickup_partial` (BWG)
 
 **When sent:** Collector taps **Partial Pickup**.
 
@@ -425,7 +493,7 @@ Please schedule a new pickup for the remaining waste in the app.
 
 ---
 
-## 10. `admin_pickup_partial` (Admin)
+## 12. `admin_pickup_partial` (Admin)
 
 **When sent:** Collector taps **Partial Pickup** (same time as `bwg_pickup_partial`).
 
@@ -458,7 +526,7 @@ Partial pickup reported. Please ensure the BWG schedules a new pickup, or create
 
 ---
 
-## 11. `bwg_delivery_confirmed` (BWG)
+## 13. `bwg_delivery_confirmed` (BWG)
 
 **When sent:** Collector taps Arrived at processor (`arrived_processor`).
 
@@ -494,7 +562,7 @@ Thank you for contributing to sustainable waste management!
 
 ---
 
-## 12. `farmer_delivery_incoming` (Processor)
+## 14. `farmer_delivery_incoming` (Processor)
 
 **When sent:** 24h before expected delivery (farmer/processor reminder cron).
 
@@ -533,7 +601,7 @@ Vehicle: {regNumber}
 
 ---
 
-## 13. `farmer_delivery_eta` (Processor)
+## 15. `farmer_delivery_eta` (Processor)
 
 **When sent:** Collector taps Full Pickup or Partial Pickup.
 
@@ -566,7 +634,7 @@ Vehicle: {regNumber}
 
 ---
 
-## 14. `farmer_delivery_confirm` (Processor)
+## 16. `farmer_delivery_confirm` (Processor)
 
 **When sent:** Collector arrives at processor (`arrived_processor`).
 
@@ -597,7 +665,7 @@ Delivery arrived. Tap Accept to confirm receipt.
 
 ---
 
-## 15. `farmer_auto_accepted` (Processor)
+## 17. `farmer_auto_accepted` (Processor)
 
 **When sent:** Midnight cron when processor has not responded to delivery confirm.
 
@@ -633,7 +701,7 @@ No response received. Delivery has been marked as accepted.
 ## New Meta Business Suite setup checklist
 
 1. Create all **15** templates above with exact names and variable counts.
-2. Add buttons only on: `bwg_pickup_requested`, `collector_job_assigned`, `collector_pickup_reminder_1h`, `farmer_delivery_confirm`.
+2. Add buttons only on: `bwg_pickup_requested`, `collector_job_assigned`, `collector_pickup_reminder_1h`, `farmer_delivery_confirm`. The 1h reminder has two buttons: Enroute and Breakdown.
 3. Set `META_WA_TEMPLATE_LANG` and WhatsApp API credentials in app environment.
 4. Deploy app code.
 5. Run Supabase migrations `00041`, `00042`, `00043` if not already applied.

@@ -170,7 +170,7 @@ export default function AdminJobsPage() {
 
   // Pickup status progression order for determining "most advanced"
   const PICKUP_STATUS_ORDER: PickupStatus[] = [
-    "requested", "verified", "assigned", "driver_accepted", "driver_not_accepted", "enroute",
+    "requested", "verified", "assigned", "driver_accepted", "driver_not_accepted", "breakdown", "enroute",
     "arrived_bwg", "full_pickup", "partial_pickup", "in_transit",
     "arrived_processor", "accepted", "processed", "rejected", "cancelled",
   ];
@@ -799,7 +799,9 @@ function EditDraftJobDialog({
     const reassignPickupIds =
       selectedVehicle !== job.vehicle_id
         ? jobPickups
-            .filter((jp) => jp.status === "driver_not_accepted")
+            .filter((jp) =>
+              jp.status === "driver_not_accepted" || jp.status === "breakdown",
+            )
             .map((jp) => jp.pickup_id)
         : [];
 
@@ -910,6 +912,8 @@ function EditDraftJobDialog({
   const hasDriverNotAccepted = jobPickups.some(
     (jp) => jp.status === "driver_not_accepted",
   );
+  const hasBreakdown = jobPickups.some((jp) => jp.status === "breakdown");
+  const needsReassignment = hasDriverNotAccepted || hasBreakdown;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -1094,10 +1098,13 @@ function EditDraftJobDialog({
               />
             </div>
 
-            {hasDriverNotAccepted && job.status === "pending" && (
-              <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800">
-                Collector did not accept within 2 hours. Select a different vehicle
-                and save to reassign — the new collector will receive the job message.
+            {needsReassignment && job.status === "pending" && (
+              <div className="rounded-md border border-orange-200 bg-orange-50 px-3 py-2 text-sm text-orange-900">
+                {hasBreakdown && !hasDriverNotAccepted
+                  ? "Vehicle breakdown reported. Select a different vehicle and save to reassign — the new collector will receive the job message."
+                  : hasDriverNotAccepted && !hasBreakdown
+                    ? "Collector did not accept within 2 hours. Select a different vehicle and save to reassign — the new collector will receive the job message."
+                    : "This job needs reassignment. Select a different vehicle and save — the new collector will receive the job message."}
               </div>
             )}
 
@@ -1123,6 +1130,9 @@ function EditDraftJobDialog({
                     )}
                     {jp.status === "driver_not_accepted" && (
                       <span className="ml-2 text-red-600">· Driver not accepted</span>
+                    )}
+                    {jp.status === "breakdown" && (
+                      <span className="ml-2 text-orange-700">· Breakdown</span>
                     )}
                   </div>
                   {job.status === "draft" && (
