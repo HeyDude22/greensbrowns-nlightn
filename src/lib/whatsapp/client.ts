@@ -85,6 +85,17 @@ export async function sendWhatsAppButtons(
   body: string,
   buttons: { id: string; title: string }[]
 ): Promise<string | null> {
+  const payloadButtons = buttons.slice(0, 3).map((b) => ({
+    type: "reply" as const,
+    reply: { id: b.id, title: b.title },
+  }));
+
+  console.log("[WhatsApp] Sending interactive buttons", {
+    to: formatPhone(to),
+    buttonCount: payloadButtons.length,
+    buttonIds: payloadButtons.map((b) => b.reply.id),
+  });
+
   return metaSend({
     to: formatPhone(to),
     type: "interactive",
@@ -92,10 +103,7 @@ export async function sendWhatsAppButtons(
       type: "button",
       body: { text: body },
       action: {
-        buttons: buttons.slice(0, 3).map((b) => ({
-          type: "reply",
-          reply: { id: b.id, title: b.title },
-        })),
+        buttons: payloadButtons,
       },
     },
   });

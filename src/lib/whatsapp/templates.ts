@@ -182,6 +182,23 @@ export function bwgPartialPickupMessage(params: {
 export const ADMIN_PARTIAL_PICKUP_MESSAGE =
   "Partial pickup reported. Please ensure the BWG schedules a new pickup, or create one in admin.";
 
+export const ADMIN_VEHICLE_BREAKDOWN_MESSAGE =
+  "Vehicle breakdown reported. Please reassign the job in the admin dashboard.";
+
+export function bwgVehicleBreakdownMessage(params: {
+  pickupNumber: string;
+  date: string;
+  slot: string | null;
+  regNumber: string;
+}): string {
+  return [
+    "GreensBrowns — Vehicle breakdown reported for your scheduled pickup.",
+    `Pickup ${params.pickupNumber} on ${params.date} (${slotLabel(params.slot)}) cannot be completed by vehicle ${params.regNumber}.`,
+    "",
+    "We will reassign and notify you when a new vehicle is on the way.",
+  ].join("\n");
+}
+
 // --- BWG email templates (legacy) ---
 
 export function bwgPickupScheduledHtml(params: {

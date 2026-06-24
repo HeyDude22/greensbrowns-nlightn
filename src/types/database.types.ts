@@ -300,48 +300,66 @@ export type Database = {
         Row: {
           address: string
           city: string
+          contact_email: string | null
           contact_name: string | null
           contact_phone: string | null
           created_at: string
           created_by: string | null
+          gstin: string | null
           id: string
           lat: number | null
           lng: number | null
           name: string
           org_type: Database["public"]["Enums"]["org_type"]
+          pan: string | null
           pincode: string | null
+          registration_number: string | null
+          signatory_designation: string | null
+          signatory_name: string | null
           updated_at: string
           ward: string | null
         }
         Insert: {
           address: string
           city?: string
+          contact_email?: string | null
           contact_name?: string | null
           contact_phone?: string | null
           created_at?: string
           created_by?: string | null
+          gstin?: string | null
           id?: string
           lat?: number | null
           lng?: number | null
           name: string
           org_type: Database["public"]["Enums"]["org_type"]
+          pan?: string | null
           pincode?: string | null
+          registration_number?: string | null
+          signatory_designation?: string | null
+          signatory_name?: string | null
           updated_at?: string
           ward?: string | null
         }
         Update: {
           address?: string
           city?: string
+          contact_email?: string | null
           contact_name?: string | null
           contact_phone?: string | null
           created_at?: string
           created_by?: string | null
+          gstin?: string | null
           id?: string
           lat?: number | null
           lng?: number | null
           name?: string
           org_type?: Database["public"]["Enums"]["org_type"]
+          pan?: string | null
           pincode?: string | null
+          registration_number?: string | null
+          signatory_designation?: string | null
+          signatory_name?: string | null
           updated_at?: string
           ward?: string | null
         }
@@ -1035,6 +1053,7 @@ export type Database = {
         | "assigned"
         | "driver_accepted"
         | "driver_not_accepted"
+        | "breakdown"
         | "enroute"
         | "arrived_bwg"
         | "full_pickup"
@@ -1221,6 +1240,7 @@ export const Constants = {
         "assigned",
         "driver_accepted",
         "driver_not_accepted",
+        "breakdown",
         "enroute",
         "arrived_bwg",
         "full_pickup",

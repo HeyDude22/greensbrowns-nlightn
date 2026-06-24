@@ -49,25 +49,53 @@ export default function CompliancePage() {
   const { user, orgId, loading: orgLoading, supabase } = useOrganization();
   const [docs, setDocs] = useState<ComplianceDoc[]>([]);
   const [loading, setLoading] = useState(true);
+  const [signing, setSigning] = useState(false);
 
-  useEffect(() => {
-    if (orgLoading || !user) return;
+  async function fetchDocs() {
     if (!orgId) {
       setLoading(false);
       return;
     }
-    async function fetchDocs() {
-      const { data } = await supabase
-        .from("compliance_docs")
-        .select("id, doc_type, file_url, generated_at, pickup_id, pickup:pickup_id(pickup_number)")
-        .eq("organization_id", orgId!)
-        .order("generated_at", { ascending: false });
+    const { data } = await supabase
+      .from("compliance_docs")
+      .select("id, doc_type, file_url, generated_at, pickup_id, pickup:pickup_id(pickup_number)")
+      .eq("organization_id", orgId)
+      .order("generated_at", { ascending: false });
 
-      if (data) setDocs(data as unknown as ComplianceDoc[]);
-      setLoading(false);
-    }
+    if (data) setDocs(data as unknown as ComplianceDoc[]);
+    setLoading(false);
+  }
+
+  useEffect(() => {
+    if (orgLoading || !user) return;
+    setLoading(true);
     fetchDocs();
   }, [user, orgId, orgLoading, supabase]);
+
+  async function handleGenerateAgreement() {
+    if (!orgId) return;
+    setSigning(true);
+    const res = await fetch("/api/bwg/sign-service-agreement", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ organizationId: orgId }),
+    });
+    const json = await res.json().catch(() => ({}));
+    setSigning(false);
+    if (!res.ok) {
+      toast.error(
+        typeof json.error === "string"
+          ? json.error
+          : "Failed to generate service agreement",
+      );
+      return;
+    }
+    toast.success("Service agreement saved");
+    setLoading(true);
+    await fetchDocs();
+  }
+
+  const hasAgreement = docs.some((d) => d.doc_type === "agreement");
 
   if (orgLoading || loading) return <DashboardSkeleton />;
 
@@ -78,14 +106,36 @@ export default function CompliancePage() {
         description="Manifests, receipts, and certificates for your pickups"
       />
 
+      {orgId && !hasAgreement && docs.length > 0 && (
+        <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+          <span>Service agreement PDF is not on file for your organization.</span>
+          <Button size="sm" onClick={handleGenerateAgreement} disabled={signing}>
+            {signing ? "Generating..." : "Generate service agreement"}
+          </Button>
+        </div>
+      )}
+
       {docs.length === 0 ? (
         <Card>
-          <CardContent className="pt-6">
+          <CardContent className="pt-6 space-y-4">
             <EmptyState
               icon={FileText}
               title="No documents yet"
-              description="Compliance documents will be generated as your pickups are processed."
+              description="Your signed service agreement should appear here after organization setup. If it is missing, generate it below (ensure legal details are filled on the Organization page)."
             />
+            {orgId && !hasAgreement && (
+              <div className="flex flex-wrap gap-2 justify-center">
+                <Button
+                  onClick={handleGenerateAgreement}
+                  disabled={signing}
+                >
+                  {signing ? "Generating..." : "Generate service agreement"}
+                </Button>
+                <Button variant="outline" asChild>
+                  <a href="/dashboard/bwg/organization">Update organization details</a>
+                </Button>
+              </div>
+            )}
           </CardContent>
         </Card>
       ) : (

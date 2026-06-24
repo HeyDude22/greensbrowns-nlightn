@@ -28,7 +28,9 @@ export const WA_TEMPLATE_NAMES = {
   collectorPickupReminder24h: "collector_pickup_reminder_24h",
   collectorPickupReminder1h: "collector_pickup_reminder_1h",
   adminDriverNotAccepted: "admin_driver_not_accepted",
+  adminVehicleBreakdown: "admin_vehicle_breakdown",
   adminPickupPartial: "admin_pickup_partial",
+  bwgVehicleBreakdown: "bwg_vehicle_breakdown",
 } as const;
 
 const SLOT_LABELS: Record<string, string> = {
@@ -287,6 +289,45 @@ export async function sendTemplateAdminDriverNotAccepted(
   );
 }
 
+export async function sendTemplateAdminVehicleBreakdown(
+  phone: string,
+  ctx: PickupWhatsAppContext,
+  params: {
+    orgName: string;
+    regNumber: string;
+  },
+): Promise<string | null> {
+  return sendWhatsAppTemplate(
+    phone,
+    WA_TEMPLATE_NAMES.adminVehicleBreakdown,
+    appendWaContext(
+      ctx,
+      [params.orgName, ctx.pickupDate, params.regNumber],
+      { skipDate: true, skipBwg: true },
+    ),
+  );
+}
+
+export async function sendTemplateBwgVehicleBreakdown(
+  phone: string,
+  ctx: PickupWhatsAppContext,
+  params: {
+    pickupNumber: string;
+    slot: string | null;
+    regNumber: string;
+  },
+): Promise<string | null> {
+  return sendWhatsAppTemplate(
+    phone,
+    WA_TEMPLATE_NAMES.bwgVehicleBreakdown,
+    appendWaContext(
+      ctx,
+      [params.pickupNumber, ctx.pickupDate, formatWaSlot(params.slot), params.regNumber],
+      { skipDate: true, skipBwg: true },
+    ),
+  );
+}
+
 export async function sendTemplateAdminPickupPartial(
   phone: string,
   ctx: PickupWhatsAppContext,
@@ -341,6 +382,7 @@ export function normalizeCollectorWhatsAppChoice(raw: string): string {
     "partial pickup": "partial_pickup",
     in_transit: "in_transit",
     "in transit": "in_transit",
+    breakdown: "breakdown",
   };
   return textMap[c] ?? c.replace(/\s+/g, "_");
 }

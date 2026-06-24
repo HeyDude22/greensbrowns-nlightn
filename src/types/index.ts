@@ -26,6 +26,12 @@ export interface Organization {
   lng: number | null;
   contact_name: string | null;
   contact_phone: string | null;
+  contact_email: string | null;
+  registration_number: string | null;
+  pan: string | null;
+  gstin: string | null;
+  signatory_name: string | null;
+  signatory_designation: string | null;
   created_at: string;
   updated_at: string;
 }

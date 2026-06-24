@@ -16,15 +16,23 @@ export const COLLECTOR_ACCEPT_JOB_BUTTON: WhatsAppButton[] = [
   { id: "driver_accepted", title: "Accepted" },
 ];
 
-/** Meta template `collector_pickup_reminder_*` quick reply */
-export const COLLECTOR_ENROUTE_BUTTON: WhatsAppButton[] = [
+/** Session buttons after driver accepts (and 1h reminder Meta template). */
+export const COLLECTOR_DRIVER_ACCEPTED_BUTTONS: WhatsAppButton[] = [
   { id: "enroute", title: "Enroute" },
+  { id: "breakdown", title: "Breakdown" },
 ];
 
-/** Session button after enroute */
-export const COLLECTOR_ARRIVED_BWG_BUTTON: WhatsAppButton[] = [
+/** @deprecated Use COLLECTOR_DRIVER_ACCEPTED_BUTTONS */
+export const COLLECTOR_ENROUTE_BUTTON = COLLECTOR_DRIVER_ACCEPTED_BUTTONS;
+
+/** Session buttons after enroute */
+export const COLLECTOR_ENROUTE_NEXT_BUTTONS: WhatsAppButton[] = [
   { id: "arrived_bwg", title: "Arrived" },
+  { id: "breakdown", title: "Breakdown" },
 ];
+
+/** @deprecated Use COLLECTOR_ENROUTE_NEXT_BUTTONS */
+export const COLLECTOR_ARRIVED_BWG_BUTTON = COLLECTOR_ENROUTE_NEXT_BUTTONS;
 
 export const COLLECTOR_PICKUP_LOAD_BUTTONS: WhatsAppButton[] = [
   { id: "full_pickup", title: "Full Pickup" },
@@ -52,8 +60,8 @@ export const BWG_CANCEL_PICKUP_BUTTON: WhatsAppButton[] = [
 
 /** Session follow-up buttons after each collector status (not Meta templates). */
 export const COLLECTOR_SESSION_NEXT: Partial<Record<PickupStatus, WhatsAppButton[]>> = {
-  driver_accepted: COLLECTOR_ENROUTE_BUTTON,
-  enroute: COLLECTOR_ARRIVED_BWG_BUTTON,
+  driver_accepted: COLLECTOR_DRIVER_ACCEPTED_BUTTONS,
+  enroute: COLLECTOR_ENROUTE_NEXT_BUTTONS,
   arrived_bwg: COLLECTOR_PICKUP_LOAD_BUTTONS,
   full_pickup: COLLECTOR_IN_TRANSIT_BUTTON,
   partial_pickup: COLLECTOR_IN_TRANSIT_BUTTON,
