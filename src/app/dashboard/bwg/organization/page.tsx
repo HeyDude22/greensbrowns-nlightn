@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, Suspense } from "react";
+import { useEffect, useMemo, useState, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { useUser } from "@/hooks/use-user";
@@ -19,13 +19,11 @@ import {
 import { PageHeader } from "@/components/shared/page-header";
 import { DashboardSkeleton } from "@/components/shared/loading-skeleton";
 import LocationPicker from "@/components/shared/location-picker-dynamic";
-import { buildOsmEmbedUrl, formatDateTimeDDMMYYYY } from "@/lib/utils";
+import { buildOsmEmbedUrl } from "@/lib/utils";
 import { Building2, Pencil } from "lucide-react";
 import { toast } from "sonner";
 import ReactMarkdown from "react-markdown";
-import { jsPDF } from "jspdf";
-import { SERVICE_AGREEMENT_MD } from "@/lib/service-agreement";
-import { notifyAgreementSigned } from "@/lib/notifications";
+import { buildServiceAgreementPreview } from "@/lib/service-agreement-fill";
 import type { Organization, OrgType } from "@/types";
 
 function SetupRequiredBanner() {
@@ -39,22 +37,80 @@ function SetupRequiredBanner() {
   );
 }
 
+type OrgFormFields = {
+  name: string;
+  orgType: OrgType;
+  address: string;
+  pincode: string;
+  lat: string;
+  lng: string;
+  registrationNumber: string;
+  pan: string;
+  gstin: string;
+  signatoryName: string;
+  signatoryDesignation: string;
+  contactName: string;
+  contactPhone: string;
+  contactEmail: string;
+};
+
+function orgToForm(org: Organization): OrgFormFields {
+  return {
+    name: org.name,
+    orgType: org.org_type,
+    address: org.address,
+    pincode: org.pincode || "",
+    lat: org.lat ? String(org.lat) : "",
+    lng: org.lng ? String(org.lng) : "",
+    registrationNumber: org.registration_number || "",
+    pan: org.pan || "",
+    gstin: org.gstin || "",
+    signatoryName: org.signatory_name || "",
+    signatoryDesignation: org.signatory_designation || "",
+    contactName: org.contact_name || "",
+    contactPhone: org.contact_phone || "",
+    contactEmail: org.contact_email || "",
+  };
+}
+
+function emptyForm(
+  profile: { full_name: string | null; phone: string | null } | null,
+  email: string | undefined,
+): OrgFormFields {
+  return {
+    name: "",
+    orgType: "apartment",
+    address: "",
+    pincode: "",
+    lat: "",
+    lng: "",
+    registrationNumber: "",
+    pan: "",
+    gstin: "",
+    signatoryName: profile?.full_name || "",
+    signatoryDesignation: "",
+    contactName: profile?.full_name || "",
+    contactPhone: profile?.phone || "",
+    contactEmail: email || "",
+  };
+}
+
 export default function OrganizationPage() {
-  const { user, loading: userLoading } = useUser();
+  const { user, profile, loading: userLoading } = useUser();
   const router = useRouter();
   const supabase = createClient();
   const [org, setOrg] = useState<Organization | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [editing, setEditing] = useState(false);
-
-  const [name, setName] = useState("");
-  const [orgType, setOrgType] = useState<OrgType>("apartment");
-  const [address, setAddress] = useState("");
-  const [pincode, setPincode] = useState("");
-  const [lat, setLat] = useState("");
-  const [lng, setLng] = useState("");
   const [agreementAccepted, setAgreementAccepted] = useState(false);
+  const [form, setForm] = useState<OrgFormFields>(() =>
+    emptyForm(null, undefined),
+  );
+
+  function patchForm<K extends keyof OrgFormFields>(key: K, value: OrgFormFields[K]) {
+    setForm((prev) => ({ ...prev, [key]: value }));
+  }
 
   useEffect(() => {
     if (!user) return;
@@ -72,50 +128,108 @@ export default function OrganizationPage() {
           .eq("id", membership.organization_id)
           .single();
         if (data) {
-          setOrg(data as Organization);
-          setName(data.name);
-          setOrgType(data.org_type as OrgType);
-          setAddress(data.address);
-          setPincode(data.pincode || "");
-          setLat(data.lat ? String(data.lat) : "");
-          setLng(data.lng ? String(data.lng) : "");
+          const orgRow = data as Organization;
+          setOrg(orgRow);
+          setForm(orgToForm(orgRow));
         }
+      } else if (profile) {
+        setForm(emptyForm(profile, user!.email));
       }
       setLoading(false);
     }
     fetchOrg();
-  }, [user, supabase]);
+  }, [user, profile, supabase]);
+
+  const agreementPreview = useMemo(() => {
+    if (org) return null;
+    return buildServiceAgreementPreview(
+      {
+        name: form.name || "—",
+        org_type: form.orgType,
+        address: form.address || "—",
+        city: "Bengaluru",
+        pincode: form.pincode || null,
+        registration_number: form.registrationNumber || null,
+        pan: form.pan || null,
+        gstin: form.gstin || null,
+        signatory_name: form.signatoryName || null,
+        signatory_designation: form.signatoryDesignation || null,
+        contact_name: form.contactName || null,
+        contact_phone: form.contactPhone || null,
+        contact_email: form.contactEmail || null,
+      },
+      form.contactEmail || user?.email || "—",
+    );
+  }, [org, form, user?.email]);
 
   if (userLoading || loading) return <DashboardSkeleton />;
+
+  async function signServiceAgreement(organizationId: string) {
+    const res = await fetch("/api/bwg/sign-service-agreement", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ organizationId }),
+    });
+    const json = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      if (res.status === 409) return true;
+      toast.error(
+        typeof json.error === "string"
+          ? json.error
+          : "Failed to save service agreement PDF",
+      );
+      return false;
+    }
+    return true;
+  }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!user) return;
     setSaving(true);
 
+    const orgPayload = {
+      name: form.name.trim(),
+      org_type: form.orgType,
+      address: form.address.trim(),
+      pincode: form.pincode.trim() || null,
+      lat: form.lat ? Number(form.lat) : null,
+      lng: form.lng ? Number(form.lng) : null,
+      registration_number: form.registrationNumber.trim(),
+      pan: form.pan.trim().toUpperCase(),
+      gstin: form.gstin.trim().toUpperCase(),
+      signatory_name: form.signatoryName.trim(),
+      signatory_designation: form.signatoryDesignation.trim(),
+      contact_name: form.contactName.trim(),
+      contact_phone: form.contactPhone.trim(),
+      contact_email: form.contactEmail.trim(),
+    };
+
     if (org) {
-      // Update existing org
       const { error } = await supabase
         .from("organizations")
-        .update({ name, org_type: orgType, address, pincode, lat: lat ? Number(lat) : null, lng: lng ? Number(lng) : null })
+        .update(orgPayload)
         .eq("id", org.id);
       if (error) {
         toast.error("Failed to update organization");
       } else {
-        setOrg({ ...org, name, org_type: orgType, address, pincode, lat: lat ? Number(lat) : null, lng: lng ? Number(lng) : null });
+        setOrg({
+          ...org,
+          ...orgPayload,
+          pincode: orgPayload.pincode || "",
+        });
         setEditing(false);
         toast.success("Organization updated");
       }
     } else {
-      // Create new org + membership
       const { data: newOrg, error: orgError } = await supabase
         .from("organizations")
-        .insert({ name, org_type: orgType, address, pincode, lat: lat ? Number(lat) : null, lng: lng ? Number(lng) : null })
+        .insert(orgPayload)
         .select()
         .single();
 
       if (orgError || !newOrg) {
-        toast.error("Failed to create organization");
+        toast.error(orgError?.message || "Failed to create organization");
         setSaving(false);
         return;
       }
@@ -130,93 +244,20 @@ export default function OrganizationPage() {
 
       if (memberError) {
         toast.error("Organization created but failed to add membership");
-      } else {
-        setOrg(newOrg as Organization);
-        toast.success("Organization created!");
-
-        // Fire-and-forget: store signed agreement as PDF + notify
-        (async () => {
-          try {
-            const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
-            const filePath = `${newOrg.id}/service-agreement-${timestamp}.pdf`;
-
-            // Generate PDF from agreement text
-            const doc = new jsPDF();
-            const pageWidth = doc.internal.pageSize.getWidth();
-            const margin = 15;
-            const maxWidth = pageWidth - margin * 2;
-            // Strip markdown syntax for plain-text PDF
-            const plainText = SERVICE_AGREEMENT_MD
-              .replace(/^#{1,6}\s+/gm, "")
-              .replace(/\*{1,2}([^*]+)\*{1,2}/g, "$1")
-              .replace(/\[([^\]]+)\]\([^)]+\)/g, "$1")
-              .replace(/^\|.*$/gm, "")
-              .replace(/^---+$/gm, "")
-              .replace(/&nbsp;/g, " ")
-              .replace(/\n{3,}/g, "\n\n");
-            const lines = doc.splitTextToSize(plainText, maxWidth);
-            let y = 20;
-            const lineHeight = 5;
-            doc.setFontSize(9);
-            for (const line of lines) {
-              if (y > doc.internal.pageSize.getHeight() - 15) {
-                doc.addPage();
-                y = 15;
-              }
-              doc.text(line, margin, y);
-              y += lineHeight;
-            }
-            // Add signing metadata on last page
-            y += 10;
-            if (y > doc.internal.pageSize.getHeight() - 30) {
-              doc.addPage();
-              y = 15;
-            }
-            doc.setFontSize(8);
-            doc.setTextColor(100);
-            doc.text(`Digitally accepted by: ${user.email}`, margin, y);
-            doc.text(`Organization: ${name}`, margin, y + 5);
-            doc.text(`Date: ${formatDateTimeDDMMYYYY(new Date())}`, margin, y + 10);
-
-            const pdfBlob = doc.output("blob");
-
-            const { error: uploadError } = await supabase.storage
-              .from("compliance-docs")
-              .upload(filePath, pdfBlob, {
-                contentType: "application/pdf",
-              });
-
-            if (uploadError) {
-              console.error("Failed to upload agreement:", uploadError);
-              return;
-            }
-
-            const { error: docError } = await supabase
-              .from("compliance_docs")
-              .insert({
-                organization_id: newOrg.id,
-                doc_type: "agreement",
-                file_url: filePath,
-                metadata: {
-                  signed_by: user.id,
-                  signed_at: new Date().toISOString(),
-                  org_name: name,
-                },
-              });
-
-            if (docError) {
-              console.error("Failed to insert compliance doc:", docError);
-            }
-
-            notifyAgreementSigned(name, newOrg.id, user.email);
-          } catch (err) {
-            console.error("Agreement storage/notification error:", err);
-          }
-        })();
-
-        // Refresh server layout so sidebar detects the new org membership
-        router.refresh();
+        setSaving(false);
+        return;
       }
+
+      const agreementOk = await signServiceAgreement(newOrg.id);
+      setOrg(newOrg as Organization);
+      if (agreementOk) {
+        toast.success("Organization created and service agreement saved");
+      } else {
+        toast.warning(
+          "Organization created. Complete the service agreement from Compliance when ready.",
+        );
+      }
+      router.refresh();
     }
     setSaving(false);
   }
@@ -227,7 +268,6 @@ export default function OrganizationPage() {
     techpark: "Tech Park",
   };
 
-  // Show org details (read-only)
   if (org && !editing) {
     return (
       <div className="space-y-6">
@@ -261,8 +301,36 @@ export default function OrganizationPage() {
               <p className="font-medium">{org.pincode || "—"}</p>
             </div>
             <div>
-              <p className="text-sm text-muted-foreground">City</p>
-              <p className="font-medium">{org.city}</p>
+              <p className="text-sm text-muted-foreground">Registration No.</p>
+              <p className="font-medium">{org.registration_number || "—"}</p>
+            </div>
+            <div>
+              <p className="text-sm text-muted-foreground">PAN</p>
+              <p className="font-medium">{org.pan || "—"}</p>
+            </div>
+            <div>
+              <p className="text-sm text-muted-foreground">GSTIN</p>
+              <p className="font-medium">{org.gstin || "—"}</p>
+            </div>
+            <div>
+              <p className="text-sm text-muted-foreground">Signatory</p>
+              <p className="font-medium">
+                {org.signatory_name || "—"}
+                {org.signatory_designation
+                  ? ` · ${org.signatory_designation}`
+                  : ""}
+              </p>
+            </div>
+            <div>
+              <p className="text-sm text-muted-foreground">Coordinator</p>
+              <p className="font-medium">
+                {org.contact_name || "—"}
+                {org.contact_phone ? ` · ${org.contact_phone}` : ""}
+              </p>
+            </div>
+            <div>
+              <p className="text-sm text-muted-foreground">Contact email</p>
+              <p className="font-medium">{org.contact_email || "—"}</p>
             </div>
             {org.lat && org.lng && (
               <div className="sm:col-span-2">
@@ -285,7 +353,17 @@ export default function OrganizationPage() {
     );
   }
 
-  // Create / Edit form
+  const isCreate = !org;
+  const legalComplete =
+    form.registrationNumber.trim() &&
+    form.pan.trim() &&
+    form.gstin.trim() &&
+    form.signatoryName.trim() &&
+    form.signatoryDesignation.trim() &&
+    form.contactName.trim() &&
+    form.contactPhone.trim() &&
+    form.contactEmail.trim();
+
   return (
     <div className="space-y-6">
       <Suspense fallback={null}>
@@ -296,77 +374,185 @@ export default function OrganizationPage() {
         description={
           org
             ? "Update your organization details"
-            : "Set up your organization to start scheduling pickups"
+            : "Provide legal details for your service agreement and pickups"
         }
       />
       <Card>
         <CardContent className="pt-6">
-          <form onSubmit={handleSubmit} className="space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="name">Organization Name</Label>
-              <Input
-                id="name"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                placeholder="e.g. Prestige Lakeside Habitat"
-                required
-              />
+          <form onSubmit={handleSubmit} className="space-y-6">
+            <div className="space-y-4">
+              <h3 className="text-sm font-semibold">Site details</h3>
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div className="space-y-2 sm:col-span-2">
+                  <Label htmlFor="name">Organization Name</Label>
+                  <Input
+                    id="name"
+                    value={form.name}
+                    onChange={(e) => patchForm("name", e.target.value)}
+                    placeholder="e.g. Prestige Lakeside Habitat"
+                    required
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="orgType">Organization Type</Label>
+                  <Select
+                    value={form.orgType}
+                    onValueChange={(v) => patchForm("orgType", v as OrgType)}
+                  >
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="apartment">Apartment Complex</SelectItem>
+                      <SelectItem value="rwa">Resident Welfare Association</SelectItem>
+                      <SelectItem value="techpark">Tech Park</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="pincode">Pincode</Label>
+                  <Input
+                    id="pincode"
+                    value={form.pincode}
+                    onChange={(e) => patchForm("pincode", e.target.value)}
+                    placeholder="560001"
+                  />
+                </div>
+                <div className="space-y-2 sm:col-span-2">
+                  <Label htmlFor="address">Registered Address</Label>
+                  <Input
+                    id="address"
+                    value={form.address}
+                    onChange={(e) => patchForm("address", e.target.value)}
+                    placeholder="Full address as on registration documents"
+                    required
+                  />
+                </div>
+                <div className="space-y-2 sm:col-span-2">
+                  <Label>Map Location (pickup site)</Label>
+                  <LocationPicker
+                    lat={form.lat ? Number(form.lat) : null}
+                    lng={form.lng ? Number(form.lng) : null}
+                    onChange={(newLat, newLng) => {
+                      patchForm("lat", String(newLat));
+                      patchForm("lng", String(newLng));
+                    }}
+                  />
+                </div>
+              </div>
             </div>
-            <div className="space-y-2">
-              <Label htmlFor="orgType">Organization Type</Label>
-              <Select
-                value={orgType}
-                onValueChange={(v) => setOrgType(v as OrgType)}
-              >
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="apartment">Apartment Complex</SelectItem>
-                  <SelectItem value="rwa">Resident Welfare Association</SelectItem>
-                  <SelectItem value="techpark">Tech Park</SelectItem>
-                </SelectContent>
-              </Select>
+
+            <div className="space-y-4">
+              <h3 className="text-sm font-semibold">Legal &amp; billing (for agreement)</h3>
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div className="space-y-2 sm:col-span-2">
+                  <Label htmlFor="registrationNumber">Society / Company Registration No.</Label>
+                  <Input
+                    id="registrationNumber"
+                    value={form.registrationNumber}
+                    onChange={(e) => patchForm("registrationNumber", e.target.value)}
+                    placeholder="As on registration certificate"
+                    required={isCreate}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="pan">Organization PAN</Label>
+                  <Input
+                    id="pan"
+                    value={form.pan}
+                    onChange={(e) => patchForm("pan", e.target.value.toUpperCase())}
+                    placeholder="AAAAA0000A"
+                    maxLength={10}
+                    required={isCreate}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="gstin">GSTIN</Label>
+                  <Input
+                    id="gstin"
+                    value={form.gstin}
+                    onChange={(e) => patchForm("gstin", e.target.value.toUpperCase())}
+                    placeholder="29AAAAA0000A1Z5"
+                    maxLength={15}
+                    required={isCreate}
+                  />
+                </div>
+              </div>
             </div>
-            <div className="space-y-2">
-              <Label htmlFor="address">Address</Label>
-              <Input
-                id="address"
-                value={address}
-                onChange={(e) => setAddress(e.target.value)}
-                placeholder="Full address"
-                required
-              />
+
+            <div className="space-y-4">
+              <h3 className="text-sm font-semibold">Authorized signatory</h3>
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div className="space-y-2">
+                  <Label htmlFor="signatoryName">Signatory Name</Label>
+                  <Input
+                    id="signatoryName"
+                    value={form.signatoryName}
+                    onChange={(e) => patchForm("signatoryName", e.target.value)}
+                    required={isCreate}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="signatoryDesignation">Designation</Label>
+                  <Input
+                    id="signatoryDesignation"
+                    value={form.signatoryDesignation}
+                    onChange={(e) => patchForm("signatoryDesignation", e.target.value)}
+                    placeholder="e.g. Secretary, Facility Manager"
+                    required={isCreate}
+                  />
+                </div>
+              </div>
             </div>
-            <div className="space-y-2">
-              <Label htmlFor="pincode">Pincode</Label>
-              <Input
-                id="pincode"
-                value={pincode}
-                onChange={(e) => setPincode(e.target.value)}
-                placeholder="560001"
-              />
+
+            <div className="space-y-4">
+              <h3 className="text-sm font-semibold">Waste management coordinator</h3>
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div className="space-y-2">
+                  <Label htmlFor="contactName">Coordinator Name</Label>
+                  <Input
+                    id="contactName"
+                    value={form.contactName}
+                    onChange={(e) => patchForm("contactName", e.target.value)}
+                    required={isCreate}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="contactPhone">Coordinator Phone (WhatsApp)</Label>
+                  <Input
+                    id="contactPhone"
+                    type="tel"
+                    value={form.contactPhone}
+                    onChange={(e) => patchForm("contactPhone", e.target.value)}
+                    placeholder="+919731296263"
+                    required={isCreate}
+                  />
+                </div>
+                <div className="space-y-2 sm:col-span-2">
+                  <Label htmlFor="contactEmail">Organization Contact Email</Label>
+                  <Input
+                    id="contactEmail"
+                    type="email"
+                    value={form.contactEmail}
+                    onChange={(e) => patchForm("contactEmail", e.target.value)}
+                    required={isCreate}
+                  />
+                </div>
+              </div>
             </div>
-            <div className="space-y-2">
-              <Label>Map Location</Label>
-              <LocationPicker
-                lat={lat ? Number(lat) : null}
-                lng={lng ? Number(lng) : null}
-                onChange={(newLat, newLng) => {
-                  setLat(String(newLat));
-                  setLng(String(newLng));
-                }}
-              />
-            </div>
-            {!org && (
+
+            {isCreate && (
               <Card>
                 <CardHeader>
-                  <CardTitle>Service Agreement</CardTitle>
+                  <CardTitle>Service Agreement Preview</CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-4">
+                  <p className="text-sm text-muted-foreground">
+                    The agreement below is filled from the details you enter. Scroll to review before accepting.
+                  </p>
                   <div className="max-h-96 overflow-y-auto rounded-md border p-4">
                     <div className="prose prose-sm max-w-none">
-                      <ReactMarkdown>{SERVICE_AGREEMENT_MD}</ReactMarkdown>
+                      <ReactMarkdown>{agreementPreview || ""}</ReactMarkdown>
                     </div>
                   </div>
                   <div className="flex items-center space-x-2">
@@ -384,15 +570,25 @@ export default function OrganizationPage() {
                 </CardContent>
               </Card>
             )}
+
             <div className="flex gap-2">
-              <Button type="submit" disabled={saving || (!org && !agreementAccepted)}>
+              <Button
+                type="submit"
+                disabled={
+                  saving ||
+                  (isCreate && (!agreementAccepted || !legalComplete))
+                }
+              >
                 {saving ? "Saving..." : org ? "Update" : "Create Organization"}
               </Button>
               {org && (
                 <Button
                   type="button"
                   variant="outline"
-                  onClick={() => setEditing(false)}
+                  onClick={() => {
+                    setForm(orgToForm(org));
+                    setEditing(false);
+                  }}
                 >
                   Cancel
                 </Button>
