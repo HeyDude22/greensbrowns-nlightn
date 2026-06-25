@@ -33,6 +33,7 @@ export const WA_TEMPLATE_NAMES = {
   collectorPickupReminder24h: "collector_pickup_reminder_24h",
   collectorPickupReminder1h: "collector_pickup_reminder_1h",
   adminDriverNotAccepted: "admin_driver_not_accepted",
+  adminDriverNoShow: "admin_driver_no_show",
   adminVehicleBreakdown: "admin_vehicle_breakdown",
   adminPickupPartial: "admin_pickup_partial",
   bwgVehicleBreakdown: "bwg_vehicle_breakdown",
@@ -353,6 +354,26 @@ export async function sendTemplateAdminDriverNotAccepted(
     appendWaContext(
       ctx,
       [params.orgName, ctx.pickupDate, params.regNumber],
+      { skipDate: true, skipBwg: true },
+    ),
+  );
+}
+
+export async function sendTemplateAdminDriverNoShow(
+  phone: string,
+  ctx: PickupWhatsAppContext,
+  params: {
+    orgName: string;
+    regNumber: string;
+    driverName: string;
+  },
+): Promise<string | null> {
+  return sendWhatsAppTemplate(
+    phone,
+    WA_TEMPLATE_NAMES.adminDriverNoShow,
+    appendWaContext(
+      ctx,
+      [params.orgName, ctx.pickupDate, params.regNumber, params.driverName],
       { skipDate: true, skipBwg: true },
     ),
   );

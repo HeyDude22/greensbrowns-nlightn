@@ -34,6 +34,7 @@ Template names must match `WA_TEMPLATE_NAMES` in `wa-templates.ts`. Button paylo
 | 20 | `bwg_no_show_warning_2` | BWG | 2nd no-show — restriction warning | None | *(wa-templates only)* |
 | 21 | `bwg_account_suspended` | BWG | 3rd no-show — account suspended | None | *(wa-templates only)* |
 | 22 | `admin_bwg_no_show` | Admin | Collector reports BWG Unavailable (no-show) | None | *(wa-templates only)* |
+| 23 | `admin_driver_no_show` | Admin | Driver accepted but never arrived by slot deadline | None | *(wa-templates only)* |
 
 **Not Meta templates:** Collector mid-flow buttons (Enroute → Arrived → Full/Partial → In Transit → Arrived) are **session interactive messages** sent via API within the 24h window. Prompt text: `COLLECTOR_ACTION_PROMPT` in `templates.ts`.
 
@@ -858,6 +859,39 @@ Sent to all admin profiles with a phone number.
 
 ---
 
+## 23. `admin_driver_no_show` (Admin)
+
+**When sent:** Driver accepted the job but did not mark **Arrived** at the BWG by the slot deadline (30 min after slot end: morning 12:30, afternoon 16:30, evening 20:30 IST). Pickup status → `driver_no_show`. Detected by the `driver-no-show` cron, which runs after each slot deadline (0 7 / 0 11 / 0 15 UTC). Sent to all admin profiles with a phone number.
+
+**Buttons:** None
+
+**Body variables:** 5
+
+```
+GreensBrowns — Driver no-show at BWG.
+The driver did not turn up for the scheduled pickup.
+BWG: {{1}}
+Pickup date: {{2}}
+Vehicle: {{3}}
+Driver: {{4}}
+
+Please arrange an alternate vehicle and reassign the job in the admin dashboard.
+
+Job {{5}}
+```
+
+| Var | Maps to |
+|-----|---------|
+| {{1}} | BWG name |
+| {{2}} | Pickup date (DD/MM/YYYY) |
+| {{3}} | Vehicle registration number |
+| {{4}} | Driver name |
+| {{5}} | Job number |
+
+Sent to all admin profiles with a phone number.
+
+---
+
 ## Deprecated
 
 - **`farmer_waste_processed`** — removed. Do not create in new Meta account.
@@ -866,11 +900,11 @@ Sent to all admin profiles with a phone number.
 
 ## New Meta Business Suite setup checklist
 
-1. Create all **22** templates above with exact names and variable counts.
+1. Create all **23** templates above with exact names and variable counts.
 2. Add buttons only on: `bwg_pickup_requested`, `collector_job_assigned`, `collector_pickup_reminder_1h`, `farmer_delivery_confirm`. The 1h reminder has two buttons: Enroute and Breakdown.
 3. Set `META_WA_TEMPLATE_LANG` and WhatsApp API credentials in app environment.
 4. Deploy app code.
-5. Run Supabase migrations `00041`–`00047` if not already applied. (`00046` adds the `bwg_unavailable` status; `00047` adds org `no_show_count` / `is_active` and suspended-org guards.)
+5. Run Supabase migrations `00041`–`00049` if not already applied. (`00046` adds the `bwg_unavailable` status; `00047` adds org `no_show_count` / `is_active` and suspended-org guards; `00048` adds the `driver_no_show` status; `00049` adds `drivers.no_show_count`.)
 6. Send a test message for each template via `/api/test/whatsapp-flow` or a staging pickup.
 
 **Session BWG Unavailable button:** `BWG Unavailable` appears alongside Full Pickup / Partial Pickup after `arrived_bwg`. It is a session interactive button (not a Meta template), payload `bwg_unavailable`.

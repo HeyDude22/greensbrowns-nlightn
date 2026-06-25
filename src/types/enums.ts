@@ -10,6 +10,7 @@ export type PickupStatus =
   | "assigned"
   | "driver_accepted"
   | "driver_not_accepted"
+  | "driver_no_show"
   | "breakdown"
   | "enroute"
   | "arrived_bwg"

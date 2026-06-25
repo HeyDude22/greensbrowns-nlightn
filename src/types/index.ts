@@ -120,6 +120,7 @@ export interface Driver {
   license_photo_path: string | null;
   license_valid_till: string | null;
   is_active: boolean;
+  no_show_count: number | null;
   created_at: string;
   updated_at: string;
 }
