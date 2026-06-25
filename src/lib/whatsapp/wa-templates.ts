@@ -28,10 +28,12 @@ export const WA_TEMPLATE_NAMES = {
   bwgNoShowWarning1: "bwg_no_show_warning_1",
   bwgNoShowWarning2: "bwg_no_show_warning_2",
   bwgAccountSuspended: "bwg_account_suspended",
+  adminBwgNoShow: "admin_bwg_no_show",
   collectorJobAssigned: "collector_job_assigned",
   collectorPickupReminder24h: "collector_pickup_reminder_24h",
   collectorPickupReminder1h: "collector_pickup_reminder_1h",
   adminDriverNotAccepted: "admin_driver_not_accepted",
+  adminDriverNoShow: "admin_driver_no_show",
   adminVehicleBreakdown: "admin_vehicle_breakdown",
   adminPickupPartial: "admin_pickup_partial",
   bwgVehicleBreakdown: "bwg_vehicle_breakdown",
@@ -357,6 +359,26 @@ export async function sendTemplateAdminDriverNotAccepted(
   );
 }
 
+export async function sendTemplateAdminDriverNoShow(
+  phone: string,
+  ctx: PickupWhatsAppContext,
+  params: {
+    orgName: string;
+    regNumber: string;
+    driverName: string;
+  },
+): Promise<string | null> {
+  return sendWhatsAppTemplate(
+    phone,
+    WA_TEMPLATE_NAMES.adminDriverNoShow,
+    appendWaContext(
+      ctx,
+      [params.orgName, ctx.pickupDate, params.regNumber, params.driverName],
+      { skipDate: true, skipBwg: true },
+    ),
+  );
+}
+
 export async function sendTemplateAdminVehicleBreakdown(
   phone: string,
   ctx: PickupWhatsAppContext,
@@ -391,6 +413,31 @@ export async function sendTemplateBwgVehicleBreakdown(
     appendWaContext(
       ctx,
       [params.pickupNumber, ctx.pickupDate, formatWaSlot(params.slot), params.regNumber],
+      { skipDate: true, skipBwg: true },
+    ),
+  );
+}
+
+export async function sendTemplateAdminBwgNoShow(
+  phone: string,
+  ctx: PickupWhatsAppContext,
+  params: {
+    orgName: string;
+    regNumber: string;
+    noShowCount: number;
+  },
+): Promise<string | null> {
+  return sendWhatsAppTemplate(
+    phone,
+    WA_TEMPLATE_NAMES.adminBwgNoShow,
+    appendWaContext(
+      ctx,
+      [
+        params.orgName,
+        ctx.pickupDate,
+        params.regNumber,
+        String(params.noShowCount),
+      ],
       { skipDate: true, skipBwg: true },
     ),
   );

@@ -316,6 +316,7 @@ export function DriversTab({ drivers, vehicles, fetchDrivers, fetchVehicles }: D
                   <TableHead>Phone</TableHead>
                   <TableHead>Valid Till</TableHead>
                   <TableHead>Vehicles</TableHead>
+                  <TableHead>No-show Count</TableHead>
                   <TableHead>Status</TableHead>
                   <TableHead>Actions</TableHead>
                 </TableRow>
@@ -345,6 +346,15 @@ export function DriversTab({ drivers, vehicles, fetchDrivers, fetchVehicles }: D
                           <span className="text-sm font-mono">{vehicleNames}</span>
                         ) : (
                           <span className="text-sm text-muted-foreground">None</span>
+                        )}
+                      </TableCell>
+                      <TableCell>
+                        {driver.no_show_count != null ? (
+                          <span className="text-sm font-medium text-red-600">
+                            {driver.no_show_count}
+                          </span>
+                        ) : (
+                          <span className="text-sm text-muted-foreground">—</span>
                         )}
                       </TableCell>
                       <TableCell>

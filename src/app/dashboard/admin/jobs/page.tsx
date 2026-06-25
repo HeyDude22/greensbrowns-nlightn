@@ -170,7 +170,7 @@ export default function AdminJobsPage() {
 
   // Pickup status progression order for determining "most advanced"
   const PICKUP_STATUS_ORDER: PickupStatus[] = [
-    "requested", "verified", "assigned", "driver_accepted", "driver_not_accepted", "breakdown", "enroute",
+    "requested", "verified", "assigned", "driver_accepted", "driver_not_accepted", "driver_no_show", "breakdown", "enroute",
     "arrived_bwg", "full_pickup", "partial_pickup", "in_transit",
     "arrived_processor", "accepted", "processed", "rejected", "cancelled",
   ];
@@ -800,7 +800,9 @@ function EditDraftJobDialog({
       selectedVehicle !== job.vehicle_id
         ? jobPickups
             .filter((jp) =>
-              jp.status === "driver_not_accepted" || jp.status === "breakdown",
+              jp.status === "driver_not_accepted" ||
+              jp.status === "driver_no_show" ||
+              jp.status === "breakdown",
             )
             .map((jp) => jp.pickup_id)
         : [];
@@ -912,8 +914,12 @@ function EditDraftJobDialog({
   const hasDriverNotAccepted = jobPickups.some(
     (jp) => jp.status === "driver_not_accepted",
   );
+  const hasDriverNoShow = jobPickups.some(
+    (jp) => jp.status === "driver_no_show",
+  );
   const hasBreakdown = jobPickups.some((jp) => jp.status === "breakdown");
-  const needsReassignment = hasDriverNotAccepted || hasBreakdown;
+  const needsReassignment =
+    hasDriverNotAccepted || hasDriverNoShow || hasBreakdown;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -1100,11 +1106,13 @@ function EditDraftJobDialog({
 
             {needsReassignment && job.status === "pending" && (
               <div className="rounded-md border border-orange-200 bg-orange-50 px-3 py-2 text-sm text-orange-900">
-                {hasBreakdown && !hasDriverNotAccepted
-                  ? "Vehicle breakdown reported. Select a different vehicle and save to reassign — the new collector will receive the job message."
-                  : hasDriverNotAccepted && !hasBreakdown
-                    ? "Collector did not accept within 2 hours. Select a different vehicle and save to reassign — the new collector will receive the job message."
-                    : "This job needs reassignment. Select a different vehicle and save — the new collector will receive the job message."}
+                {hasDriverNoShow && !hasBreakdown && !hasDriverNotAccepted
+                  ? "Driver did not arrive at the BWG by the slot deadline. Select a different vehicle and save to reassign — the new collector will receive the job message."
+                  : hasBreakdown && !hasDriverNotAccepted && !hasDriverNoShow
+                    ? "Vehicle breakdown reported. Select a different vehicle and save to reassign — the new collector will receive the job message."
+                    : hasDriverNotAccepted && !hasBreakdown && !hasDriverNoShow
+                      ? "Collector did not accept within 2 hours. Select a different vehicle and save to reassign — the new collector will receive the job message."
+                      : "This job needs reassignment. Select a different vehicle and save — the new collector will receive the job message."}
               </div>
             )}
 
@@ -1130,6 +1138,9 @@ function EditDraftJobDialog({
                     )}
                     {jp.status === "driver_not_accepted" && (
                       <span className="ml-2 text-red-600">· Driver not accepted</span>
+                    )}
+                    {jp.status === "driver_no_show" && (
+                      <span className="ml-2 text-red-600">· Driver no show</span>
                     )}
                     {jp.status === "breakdown" && (
                       <span className="ml-2 text-orange-700">· Breakdown</span>

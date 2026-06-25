@@ -121,6 +121,7 @@ export type Database = {
           is_active: boolean
           license_number: string
           name: string
+          no_show_count: number | null
           phone: string | null
           updated_at: string
         }
@@ -130,6 +131,7 @@ export type Database = {
           is_active?: boolean
           license_number: string
           name: string
+          no_show_count?: number | null
           phone?: string | null
           updated_at?: string
         }
@@ -139,6 +141,7 @@ export type Database = {
           is_active?: boolean
           license_number?: string
           name?: string
+          no_show_count?: number | null
           phone?: string | null
           updated_at?: string
         }
@@ -1059,6 +1062,7 @@ export type Database = {
         | "assigned"
         | "driver_accepted"
         | "driver_not_accepted"
+        | "driver_no_show"
         | "breakdown"
         | "enroute"
         | "arrived_bwg"
@@ -1247,6 +1251,7 @@ export const Constants = {
         "assigned",
         "driver_accepted",
         "driver_not_accepted",
+        "driver_no_show",
         "breakdown",
         "enroute",
         "arrived_bwg",

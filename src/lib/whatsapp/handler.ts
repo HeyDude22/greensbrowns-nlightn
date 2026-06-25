@@ -16,6 +16,7 @@ import {
   sendBwgPickupCollectedWhatsApp,
   sendBwgVehicleArrivedWhatsApp,
   sendBwgNoShowWhatsApp,
+  notifyAdminsBwgNoShow,
   notifyAdminsPartialPickup,
   sendJobAssignedNotification,
   notifyVehicleBreakdown,
@@ -509,9 +510,10 @@ async function handleBwgUnavailable(
 
   const noShowCount = await recordOrgNoShow(pickup.organization_id);
   await sendBwgNoShowWhatsApp(pickup.id, noShowCount);
+  await notifyAdminsBwgNoShow(pickup.id, noShowCount);
 
   return text(
-    "Recorded as BWG Unavailable. This pickup is now closed and no credit is refunded to the BWG. Stand by for further instructions.",
+    "Recorded as BWG Unavailable. This pickup is now closed. You may leave the BWG premises and contact admin for further instructions.",
   );
 }
 

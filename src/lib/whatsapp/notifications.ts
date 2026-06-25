@@ -19,6 +19,7 @@ import {
   sendTemplateBwgNoShowWarning1,
   sendTemplateBwgNoShowWarning2,
   sendTemplateBwgAccountSuspended,
+  sendTemplateAdminBwgNoShow,
 } from "./wa-templates";
 import { getPickupWhatsAppContext } from "./pickup-context";
 import { formatDateDDMMYYYY } from "@/lib/utils";
@@ -425,6 +426,66 @@ export async function sendBwgNoShowWhatsApp(
       phone,
       noShowCount,
     });
+  }
+}
+
+/**
+ * Notify all admins of a BWG no-show so they can instruct the driver on next
+ * steps (move to next pickup, head to processor, or return). Mirrors the
+ * vehicle-breakdown admin fan-out.
+ */
+export async function notifyAdminsBwgNoShow(
+  pickupId: string,
+  noShowCount: number,
+): Promise<void> {
+  const ctx = await getPickupWhatsAppContext(supabase, pickupId);
+  if (!ctx) {
+    console.warn("[BwgNoShow] skip admin notify: no context", { pickupId });
+    return;
+  }
+
+  const { data: pickup } = await supabase
+    .from("pickups")
+    .select("vehicle_id, organizations(name)")
+    .eq("id", pickupId)
+    .single();
+
+  if (!pickup) return;
+
+  const org = pickup.organizations as unknown as { name: string };
+  let regNumber = "Unknown vehicle";
+
+  if (pickup.vehicle_id) {
+    const { data: vehicle } = await supabase
+      .from("vehicles")
+      .select("registration_number")
+      .eq("id", pickup.vehicle_id)
+      .single();
+
+    if (vehicle?.registration_number) {
+      regNumber = vehicle.registration_number;
+    }
+  }
+
+  const { data: admins } = await supabase
+    .from("profiles")
+    .select("phone")
+    .eq("role", "admin")
+    .not("phone", "is", null);
+
+  for (const admin of admins ?? []) {
+    if (!admin.phone) continue;
+    const messageId = await sendTemplateAdminBwgNoShow(admin.phone, ctx, {
+      orgName: org?.name ?? "BWG",
+      regNumber,
+      noShowCount,
+    });
+    if (!messageId) {
+      console.error("[BwgNoShow] admin template failed", {
+        pickupId,
+        phone: admin.phone,
+      });
+    }
   }
 }
 
