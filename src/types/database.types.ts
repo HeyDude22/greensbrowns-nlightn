@@ -307,9 +307,11 @@ export type Database = {
           created_by: string | null
           gstin: string | null
           id: string
+          is_active: boolean
           lat: number | null
           lng: number | null
           name: string
+          no_show_count: number | null
           org_type: Database["public"]["Enums"]["org_type"]
           pan: string | null
           pincode: string | null
@@ -329,9 +331,11 @@ export type Database = {
           created_by?: string | null
           gstin?: string | null
           id?: string
+          is_active?: boolean
           lat?: number | null
           lng?: number | null
           name: string
+          no_show_count?: number | null
           org_type: Database["public"]["Enums"]["org_type"]
           pan?: string | null
           pincode?: string | null
@@ -351,9 +355,11 @@ export type Database = {
           created_by?: string | null
           gstin?: string | null
           id?: string
+          is_active?: boolean
           lat?: number | null
           lng?: number | null
           name?: string
+          no_show_count?: number | null
           org_type?: Database["public"]["Enums"]["org_type"]
           pan?: string | null
           pincode?: string | null
@@ -1063,6 +1069,7 @@ export type Database = {
         | "accepted"
         | "rejected"
         | "processed"
+        | "bwg_unavailable"
         | "cancelled"
         | "picked_up"
         | "delivered"
@@ -1250,6 +1257,7 @@ export const Constants = {
         "accepted",
         "rejected",
         "processed",
+        "bwg_unavailable",
         "cancelled",
         "picked_up",
         "delivered",

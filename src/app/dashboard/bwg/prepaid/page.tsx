@@ -45,6 +45,7 @@ interface AssignedPackageWithPlan {
 export default function BwgPrepaidPage() {
   const { user, orgId: memberOrgId, loading: orgLoading, supabase } = useOrganization();
   const [orgId, setOrgId] = useState<string | null>(null);
+  const [orgActive, setOrgActive] = useState(true);
   const [packages, setPackages] = useState<PrepaidPackageWithPlan[]>([]);
   const [assignedPackages, setAssignedPackages] = useState<AssignedPackageWithPlan[]>([]);
   const [loading, setLoading] = useState(true);
@@ -78,10 +79,17 @@ export default function BwgPrepaidPage() {
     }
     async function fetchData() {
       setOrgId(memberOrgId);
-      await Promise.all([
+      const orgPromise = supabase
+        .from("organizations")
+        .select("is_active")
+        .eq("id", memberOrgId!)
+        .single();
+      const [orgRes] = await Promise.all([
+        orgPromise,
         fetchPackages(memberOrgId!),
         fetchAssignedPackages(memberOrgId!),
       ]);
+      setOrgActive(orgRes.data?.is_active ?? true);
       setLoading(false);
     }
     fetchData();
@@ -89,6 +97,12 @@ export default function BwgPrepaidPage() {
 
   async function handleSelectPlan(assignedPkg: AssignedPackageWithPlan) {
     if (!orgId || !user) return;
+    if (!orgActive) {
+      toast.error(
+        "Your organization is suspended and cannot purchase plans. Please contact GreensBrowns support.",
+      );
+      return;
+    }
 
     setSubmitting(assignedPkg.id);
     const plan = assignedPkg.prepaid_package_plans;
@@ -122,7 +136,7 @@ export default function BwgPrepaidPage() {
 
   const hasPendingRequest = pendingRequests > 0;
 
-  const canRequestNew = !hasUsableCredits && !hasPendingRequest;
+  const canRequestNew = !hasUsableCredits && !hasPendingRequest && orgActive;
 
   if (orgLoading || loading) return <DashboardSkeleton />;
 
@@ -146,7 +160,13 @@ export default function BwgPrepaidPage() {
         />
       </div>
 
-      {!canRequestNew && (
+      {!orgActive && (
+        <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-800">
+          Your organization is suspended and cannot purchase plans. Please contact GreensBrowns support to reactivate your account.
+        </div>
+      )}
+
+      {orgActive && !canRequestNew && (
         <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
           {hasUsableCredits
             ? "You have remaining pickup credits on an approved package. You can request a new package once your credits are used up or the validity period ends."

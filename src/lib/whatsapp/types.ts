@@ -37,6 +37,7 @@ export const COLLECTOR_ARRIVED_BWG_BUTTON = COLLECTOR_ENROUTE_NEXT_BUTTONS;
 export const COLLECTOR_PICKUP_LOAD_BUTTONS: WhatsAppButton[] = [
   { id: "full_pickup", title: "Full Pickup" },
   { id: "partial_pickup", title: "Partial Pickup" },
+  { id: "bwg_unavailable", title: "BWG Unavailable" },
 ];
 
 export const COLLECTOR_IN_TRANSIT_BUTTON: WhatsAppButton[] = [

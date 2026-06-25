@@ -412,6 +412,68 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ report, testIds });
     }
 
+    // === BWG UNAVAILABLE (no-show) — self-contained branch ===
+    if (step === "bwg-unavailable") {
+      const seedResult = await seed();
+      if ("error" in seedResult) {
+        return NextResponse.json({ error: seedResult.error, report });
+      }
+      assert("seed", !!testIds.pickupId, seedResult);
+
+      for (const [action, label] of [
+        ["driver_accepted", "Accepted"],
+        ["enroute", "Enroute"],
+        ["arrived_bwg", "Arrived"],
+      ] as const) {
+        const res = await simulateButtonWebhook(
+          baseUrl,
+          TEST_COLLECTOR_PHONE,
+          action,
+          label
+        );
+        assert(`collector-${action}`, res.ok, `status: ${res.status}`);
+      }
+
+      const unavailableRes = await simulateButtonWebhook(
+        baseUrl,
+        TEST_COLLECTOR_PHONE,
+        "bwg_unavailable",
+        "BWG Unavailable"
+      );
+      assert(
+        "collector-bwg-unavailable",
+        unavailableRes.ok,
+        `status: ${unavailableRes.status}`
+      );
+
+      const statusAfter = await getPickupStatus(testIds.pickupId!);
+      assert(
+        "db-status-bwg-unavailable",
+        statusAfter?.status === "bwg_unavailable",
+        `Status: ${statusAfter?.status}`
+      );
+
+      const { data: orgRow } = await supabase
+        .from("organizations")
+        .select("no_show_count, is_active")
+        .eq("id", testIds.orgId!)
+        .single();
+      assert(
+        "org-no-show-recorded",
+        orgRow?.no_show_count === 1 && orgRow?.is_active === true,
+        orgRow
+      );
+
+      await cleanup();
+
+      const passed = report.filter((r) => r.status === "pass").length;
+      const failed = report.filter((r) => r.status === "fail").length;
+      return NextResponse.json({
+        summary: `${passed} passed, ${failed} failed, ${report.length} total`,
+        report,
+      });
+    }
+
     // === STEP 1: Job assigned notification ===
     if (step === "job-assigned" || step === "all") {
       const { sendJobAssignedNotification } = await import(

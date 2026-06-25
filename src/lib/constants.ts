@@ -114,6 +114,7 @@ export const PICKUP_STATUS_LABELS: Record<PickupStatus, string> = {
   accepted: "Accepted",
   rejected: "Rejected",
   processed: "Processed",
+  bwg_unavailable: "BWG Unavailable",
   cancelled: "Cancelled",
 };
 
@@ -133,6 +134,7 @@ export const PICKUP_STATUS_COLORS: Record<PickupStatus, string> = {
   accepted: "bg-emerald-100 text-emerald-800",
   rejected: "bg-red-100 text-red-800",
   processed: "bg-emerald-200 text-emerald-900",
+  bwg_unavailable: "bg-red-100 text-red-800",
   cancelled: "bg-red-100 text-red-800",
 };
 
