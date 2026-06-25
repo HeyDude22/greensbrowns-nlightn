@@ -28,6 +28,7 @@ export const WA_TEMPLATE_NAMES = {
   bwgNoShowWarning1: "bwg_no_show_warning_1",
   bwgNoShowWarning2: "bwg_no_show_warning_2",
   bwgAccountSuspended: "bwg_account_suspended",
+  adminBwgNoShow: "admin_bwg_no_show",
   collectorJobAssigned: "collector_job_assigned",
   collectorPickupReminder24h: "collector_pickup_reminder_24h",
   collectorPickupReminder1h: "collector_pickup_reminder_1h",
@@ -391,6 +392,31 @@ export async function sendTemplateBwgVehicleBreakdown(
     appendWaContext(
       ctx,
       [params.pickupNumber, ctx.pickupDate, formatWaSlot(params.slot), params.regNumber],
+      { skipDate: true, skipBwg: true },
+    ),
+  );
+}
+
+export async function sendTemplateAdminBwgNoShow(
+  phone: string,
+  ctx: PickupWhatsAppContext,
+  params: {
+    orgName: string;
+    regNumber: string;
+    noShowCount: number;
+  },
+): Promise<string | null> {
+  return sendWhatsAppTemplate(
+    phone,
+    WA_TEMPLATE_NAMES.adminBwgNoShow,
+    appendWaContext(
+      ctx,
+      [
+        params.orgName,
+        ctx.pickupDate,
+        params.regNumber,
+        String(params.noShowCount),
+      ],
       { skipDate: true, skipBwg: true },
     ),
   );

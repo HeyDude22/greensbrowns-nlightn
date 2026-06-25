@@ -33,6 +33,7 @@ Template names must match `WA_TEMPLATE_NAMES` in `wa-templates.ts`. Button paylo
 | 19 | `bwg_no_show_warning_1` | BWG | 1st no-show (BWG Unavailable) | None | *(wa-templates only)* |
 | 20 | `bwg_no_show_warning_2` | BWG | 2nd no-show — restriction warning | None | *(wa-templates only)* |
 | 21 | `bwg_account_suspended` | BWG | 3rd no-show — account suspended | None | *(wa-templates only)* |
+| 22 | `admin_bwg_no_show` | Admin | Collector reports BWG Unavailable (no-show) | None | *(wa-templates only)* |
 
 **Not Meta templates:** Collector mid-flow buttons (Enroute → Arrived → Full/Partial → In Transit → Arrived) are **session interactive messages** sent via API within the 24h window. Prompt text: `COLLECTOR_ACTION_PROMPT` in `templates.ts`.
 
@@ -69,7 +70,8 @@ Template names must match `WA_TEMPLATE_NAMES` in `wa-templates.ts`. Button paylo
 
 [Session] BWG Unavailable → bwg_unavailable (no-show; pickup closed, no credit refund)
          ├─ vehicle released from job if it is the only grouped pickup
-         └─ [Meta] bwg_no_show_warning_1 (1st) / bwg_no_show_warning_2 (2nd) / bwg_account_suspended (3rd → org suspended)
+         ├─ [Meta] bwg_no_show_warning_1 (1st) / bwg_no_show_warning_2 (2nd) / bwg_account_suspended (3rd → org suspended)
+         └─ [Meta] admin_bwg_no_show → admin instructs driver on next steps
 
 [Session] Arrived → arrived_processor
          ├─ [Meta] bwg_delivery_confirmed
@@ -824,6 +826,38 @@ Job {{3}} | {{4}}
 
 ---
 
+## 22. `admin_bwg_no_show` (Admin)
+
+**When sent:** Collector taps **BWG Unavailable** at the BWG (`bwg_unavailable`). Sent to all admin profiles with a phone number so they can instruct the driver on next steps.
+
+**Buttons:** None
+
+**Body variables:** 5
+
+```
+GreensBrowns — BWG no-show reported.
+BWG: {{1}}
+Pickup date: {{2}}
+Vehicle: {{3}}
+Recorded no-shows for this BWG: {{4}}
+
+Pickup is closed. Please instruct the driver on next steps (next pickup, processor, or return).
+
+Job {{5}}
+```
+
+| Var | Maps to |
+|-----|---------|
+| {{1}} | BWG name |
+| {{2}} | Pickup date (DD/MM/YYYY) |
+| {{3}} | Vehicle registration number |
+| {{4}} | Organization no-show count (1, 2, or 3) |
+| {{5}} | Job number |
+
+Sent to all admin profiles with a phone number.
+
+---
+
 ## Deprecated
 
 - **`farmer_waste_processed`** — removed. Do not create in new Meta account.
@@ -832,7 +866,7 @@ Job {{3}} | {{4}}
 
 ## New Meta Business Suite setup checklist
 
-1. Create all **21** templates above with exact names and variable counts.
+1. Create all **22** templates above with exact names and variable counts.
 2. Add buttons only on: `bwg_pickup_requested`, `collector_job_assigned`, `collector_pickup_reminder_1h`, `farmer_delivery_confirm`. The 1h reminder has two buttons: Enroute and Breakdown.
 3. Set `META_WA_TEMPLATE_LANG` and WhatsApp API credentials in app environment.
 4. Deploy app code.
