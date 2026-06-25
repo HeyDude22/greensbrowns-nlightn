@@ -15,6 +15,10 @@ import {
   sendTemplateAdminPickupPartial,
   sendTemplateAdminVehicleBreakdown,
   sendTemplateBwgVehicleBreakdown,
+  sendTemplateBwgVehicleArrived,
+  sendTemplateBwgNoShowWarning1,
+  sendTemplateBwgNoShowWarning2,
+  sendTemplateBwgAccountSuspended,
 } from "./wa-templates";
 import { getPickupWhatsAppContext } from "./pickup-context";
 import { formatDateDDMMYYYY } from "@/lib/utils";
@@ -343,6 +347,83 @@ export async function sendBwgPickupWhatsApp(pickupId: string) {
     console.error("[BWG WhatsApp] pickup scheduled template failed", {
       pickupId,
       phone,
+    });
+  }
+}
+
+export async function sendBwgVehicleArrivedWhatsApp(pickupId: string) {
+  const { data: pickup } = await supabase
+    .from("pickups")
+    .select("id, scheduled_slot")
+    .eq("id", pickupId)
+    .single();
+
+  if (!pickup) return;
+
+  const phone = await resolveBwgPhone(pickupId);
+  if (!phone) {
+    console.warn(`[BWG WhatsApp] No phone for pickup ${pickupId} (profile or org contact)`);
+    return;
+  }
+
+  const ctx = await getPickupWhatsAppContext(supabase, pickupId);
+  if (!ctx) {
+    console.warn("[BWG WhatsApp] skip: could not load pickup context", { pickupId });
+    return;
+  }
+
+  const messageId = await sendTemplateBwgVehicleArrived(phone, ctx, {
+    slot: pickup.scheduled_slot,
+  });
+  if (!messageId) {
+    console.error("[BWG WhatsApp] vehicle arrived template failed", {
+      pickupId,
+      phone,
+    });
+  }
+}
+
+/**
+ * Notify the BWG of a recorded no-show. The message escalates with the offence
+ * count: 1 = warning, 2 = account restriction warning, 3 = account suspended.
+ */
+export async function sendBwgNoShowWhatsApp(
+  pickupId: string,
+  noShowCount: number,
+) {
+  const { data: pickup } = await supabase
+    .from("pickups")
+    .select("id, scheduled_slot")
+    .eq("id", pickupId)
+    .single();
+
+  if (!pickup) return;
+
+  const phone = await resolveBwgPhone(pickupId);
+  if (!phone) {
+    console.warn(`[BWG WhatsApp] No phone for pickup ${pickupId} (profile or org contact)`);
+    return;
+  }
+
+  const ctx = await getPickupWhatsAppContext(supabase, pickupId);
+  if (!ctx) {
+    console.warn("[BWG WhatsApp] skip: could not load pickup context", { pickupId });
+    return;
+  }
+
+  const params = { slot: pickup.scheduled_slot };
+  const messageId =
+    noShowCount >= 3
+      ? await sendTemplateBwgAccountSuspended(phone, ctx, params)
+      : noShowCount === 2
+        ? await sendTemplateBwgNoShowWarning2(phone, ctx, params)
+        : await sendTemplateBwgNoShowWarning1(phone, ctx, params);
+
+  if (!messageId) {
+    console.error("[BWG WhatsApp] no-show template failed", {
+      pickupId,
+      phone,
+      noShowCount,
     });
   }
 }

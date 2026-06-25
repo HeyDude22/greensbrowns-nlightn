@@ -14,6 +14,8 @@ import {
   sendBwgPartialPickupWhatsApp,
   sendBwgPickupCancelledWhatsApp,
   sendBwgPickupCollectedWhatsApp,
+  sendBwgVehicleArrivedWhatsApp,
+  sendBwgNoShowWhatsApp,
   notifyAdminsPartialPickup,
   sendJobAssignedNotification,
   notifyVehicleBreakdown,
@@ -347,9 +349,10 @@ async function handleCollectorAction(
   }
 
   if (action === "arrived_bwg") {
+    await sendBwgVehicleArrivedWhatsApp(pickup.id);
     return sessionReplyAfterStatus(
       "arrived_bwg",
-      "Arrival at BWG confirmed. Select Full Pickup or Partial Pickup."
+      "Arrival at BWG confirmed and the BWG has been notified. Select Full Pickup or Partial Pickup, or tap BWG Unavailable if no one is available."
     );
   }
 
@@ -421,6 +424,94 @@ async function handleCollectorBreakdown(
 
   return text(
     "Breakdown reported. Admin and the BWG have been notified. Stand by for reassignment.",
+  );
+}
+
+/**
+ * Release the vehicle from the job when the only grouped pickup is closed.
+ * Multi-pickup and carries-waste-to-processor flows are intentionally not
+ * built yet (see product spec); those jobs are left untouched for now.
+ */
+async function releaseVehicleIfSolePickup(pickupId: string): Promise<void> {
+  const { data: link } = await supabase
+    .from("job_pickups")
+    .select("job_id")
+    .eq("pickup_id", pickupId)
+    .maybeSingle();
+
+  if (!link?.job_id) return;
+
+  const { count } = await supabase
+    .from("job_pickups")
+    .select("id", { count: "exact", head: true })
+    .eq("job_id", link.job_id);
+
+  if ((count ?? 0) <= 1) {
+    await supabase
+      .from("jobs")
+      .update({ status: "cancelled" })
+      .eq("id", link.job_id);
+  }
+}
+
+/**
+ * Record a no-show against the organization. no_show_count escalates
+ * NULL -> 1 -> 2 -> 3; the third offence suspends the account (is_active=false).
+ * Returns the new offence count.
+ */
+async function recordOrgNoShow(organizationId: string): Promise<number> {
+  const { data: org } = await supabase
+    .from("organizations")
+    .select("no_show_count")
+    .eq("id", organizationId)
+    .single();
+
+  const newCount = (org?.no_show_count ?? 0) + 1;
+  const update: Record<string, unknown> = { no_show_count: newCount };
+  if (newCount >= 3) update.is_active = false;
+
+  const { error } = await supabase
+    .from("organizations")
+    .update(update)
+    .eq("id", organizationId);
+
+  if (error) {
+    console.error("[WhatsApp] no-show update failed", { organizationId, error });
+  }
+
+  return newCount;
+}
+
+async function handleBwgUnavailable(
+  profileId: string,
+): Promise<WhatsAppHandlerReply> {
+  const pickup = await findActiveCollectorPickup(profileId);
+  if (!pickup) return text("No active pickup found.");
+
+  if (pickup.status !== "arrived_bwg") {
+    return text(
+      "BWG Unavailable can only be reported after you tap Arrived at the BWG.",
+    );
+  }
+
+  const ok = await transitionPickup(
+    pickup.id,
+    profileId,
+    "bwg_unavailable",
+    "BWG unavailable (no-show) reported by collector via WhatsApp",
+  );
+
+  if (!ok) {
+    return text("Failed to report BWG unavailable. Please try again.");
+  }
+
+  await releaseVehicleIfSolePickup(pickup.id);
+
+  const noShowCount = await recordOrgNoShow(pickup.organization_id);
+  await sendBwgNoShowWhatsApp(pickup.id, noShowCount);
+
+  return text(
+    "Recorded as BWG Unavailable. This pickup is now closed and no credit is refunded to the BWG. Stand by for further instructions.",
   );
 }
 
@@ -526,6 +617,10 @@ export async function handleIncomingMessage(
 
     if (choice === "breakdown") {
       return handleCollectorBreakdown(profile.id);
+    }
+
+    if (choice === "bwg_unavailable") {
+      return handleBwgUnavailable(profile.id);
     }
 
     const action = choice as PickupStatus;

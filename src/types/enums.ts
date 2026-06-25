@@ -20,6 +20,7 @@ export type PickupStatus =
   | "accepted"
   | "rejected"
   | "processed"
+  | "bwg_unavailable"
   | "cancelled";
 
 export type RejectionReason = "mixed_waste" | "capacity_full" | "other";

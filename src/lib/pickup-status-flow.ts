@@ -21,6 +21,7 @@ export const PICKUP_PIPELINE_ORDER: PickupStatus[] = [
   "accepted",
   "processed",
   "rejected",
+  "bwg_unavailable",
   "cancelled",
 ];
 
@@ -42,6 +43,7 @@ export const PICKUP_TERMINAL_STATUSES: PickupStatus[] = [
   "rejected",
   "driver_not_accepted",
   "breakdown",
+  "bwg_unavailable",
 ];
 
 /** Legacy DB values migrated in 00042 — kept for defensive display only. */

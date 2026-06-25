@@ -71,6 +71,7 @@ export default function SchedulePickupPage() {
   const router = useRouter();
 
   const [orgId, setOrgId] = useState<string | null>(null);
+  const [orgActive, setOrgActive] = useState(true);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
 
@@ -107,6 +108,13 @@ export default function SchedulePickupPage() {
     }
     async function fetchOrg() {
       setOrgId(memberOrgId);
+
+      const { data: orgRow } = await supabase
+        .from("organizations")
+        .select("is_active")
+        .eq("id", memberOrgId!)
+        .single();
+      setOrgActive(orgRow?.is_active ?? true);
 
       // FIFO: earliest-expiring approved package with remaining credits
       const { data: prepaidRows } = await supabase
@@ -151,7 +159,7 @@ export default function SchedulePickupPage() {
         .select("vehicle_id", { count: "exact", head: true })
         .eq("scheduled_date", date)
         .not("vehicle_id", "is", null)
-        .not("status", "in", '("cancelled","arrived_processor","accepted","processed")');
+        .not("status", "in", '("cancelled","bwg_unavailable","breakdown","driver_not_accepted","arrived_processor","accepted","processed")');
 
       const total = totalVehicles ?? 0;
       const busy = busyVehicles ?? 0;
@@ -215,6 +223,12 @@ export default function SchedulePickupPage() {
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!user || !orgId) return;
+    if (!orgActive) {
+      toast.error(
+        "Your organization is suspended and cannot schedule pickups. Please contact GreensBrowns support.",
+      );
+      return;
+    }
     if (!prepaidPackage) {
       toast.error(
         "Your organization has no prepaid pickup credits. Please contact your admin to assign a prepaid package."
@@ -309,6 +323,14 @@ export default function SchedulePickupPage() {
         title="Schedule Pickup"
         description="Request a new waste pickup for your organization"
       />
+      {!orgActive && (
+        <div className="rounded-lg border border-red-200 bg-red-50 p-4 flex items-center gap-3">
+          <CreditCard className="h-5 w-5 text-red-600 shrink-0" />
+          <p className="text-sm text-red-800">
+            Your organization is suspended and cannot schedule pickups, even if credits are available. Please contact GreensBrowns support to reactivate your account.
+          </p>
+        </div>
+      )}
       {prepaidPackage ? (
         <div className="rounded-lg border border-green-200 bg-green-50 p-4 flex items-center gap-3">
           <CreditCard className="h-5 w-5 text-green-600 shrink-0" />
@@ -487,7 +509,7 @@ export default function SchedulePickupPage() {
               />
             </div>
             <div className="flex gap-2">
-              <Button type="submit" disabled={submitting || !prepaidPackage}>
+              <Button type="submit" disabled={submitting || !prepaidPackage || !orgActive}>
                 {submitting ? "Scheduling..." : "Schedule Pickup"}
               </Button>
               <Button

@@ -24,6 +24,10 @@ export const WA_TEMPLATE_NAMES = {
   bwgPickupCollected: "bwg_pickup_collected",
   bwgPickupPartial: "bwg_pickup_partial",
   bwgDeliveryConfirmed: "bwg_delivery_confirmed",
+  bwgVehicleArrived: "bwg_vehicle_arrived",
+  bwgNoShowWarning1: "bwg_no_show_warning_1",
+  bwgNoShowWarning2: "bwg_no_show_warning_2",
+  bwgAccountSuspended: "bwg_account_suspended",
   collectorJobAssigned: "collector_job_assigned",
   collectorPickupReminder24h: "collector_pickup_reminder_24h",
   collectorPickupReminder1h: "collector_pickup_reminder_1h",
@@ -210,6 +214,70 @@ export async function sendTemplateBwgDeliveryConfirmed(
   );
 }
 
+export async function sendTemplateBwgVehicleArrived(
+  phone: string,
+  ctx: PickupWhatsAppContext,
+  params: { slot: string | null },
+): Promise<string | null> {
+  return sendWhatsAppTemplate(
+    phone,
+    WA_TEMPLATE_NAMES.bwgVehicleArrived,
+    appendWaContext(
+      ctx,
+      [ctx.pickupDate, formatWaSlot(params.slot)],
+      { skipDate: true },
+    ),
+  );
+}
+
+export async function sendTemplateBwgNoShowWarning1(
+  phone: string,
+  ctx: PickupWhatsAppContext,
+  params: { slot: string | null },
+): Promise<string | null> {
+  return sendWhatsAppTemplate(
+    phone,
+    WA_TEMPLATE_NAMES.bwgNoShowWarning1,
+    appendWaContext(
+      ctx,
+      [ctx.pickupDate, formatWaSlot(params.slot)],
+      { skipDate: true },
+    ),
+  );
+}
+
+export async function sendTemplateBwgNoShowWarning2(
+  phone: string,
+  ctx: PickupWhatsAppContext,
+  params: { slot: string | null },
+): Promise<string | null> {
+  return sendWhatsAppTemplate(
+    phone,
+    WA_TEMPLATE_NAMES.bwgNoShowWarning2,
+    appendWaContext(
+      ctx,
+      [ctx.pickupDate, formatWaSlot(params.slot)],
+      { skipDate: true },
+    ),
+  );
+}
+
+export async function sendTemplateBwgAccountSuspended(
+  phone: string,
+  ctx: PickupWhatsAppContext,
+  params: { slot: string | null },
+): Promise<string | null> {
+  return sendWhatsAppTemplate(
+    phone,
+    WA_TEMPLATE_NAMES.bwgAccountSuspended,
+    appendWaContext(
+      ctx,
+      [ctx.pickupDate, formatWaSlot(params.slot)],
+      { skipDate: true },
+    ),
+  );
+}
+
 export async function sendTemplateCollectorJobAssigned(
   phone: string,
   ctx: PickupWhatsAppContext,
@@ -383,6 +451,9 @@ export function normalizeCollectorWhatsAppChoice(raw: string): string {
     in_transit: "in_transit",
     "in transit": "in_transit",
     breakdown: "breakdown",
+    bwg_unavailable: "bwg_unavailable",
+    "bwg unavailable": "bwg_unavailable",
+    unavailable: "bwg_unavailable",
   };
   return textMap[c] ?? c.replace(/\s+/g, "_");
 }

@@ -29,6 +29,10 @@ Template names must match `WA_TEMPLATE_NAMES` in `wa-templates.ts`. Button paylo
 | 15 | `farmer_delivery_eta` | Processor | After full or partial pickup | None | `farmerDeliveryETAMessage` |
 | 16 | `farmer_delivery_confirm` | Processor | Collector arrives at processor | **Accepted** | `FARMER_CONFIRM_DELIVERY` |
 | 17 | `farmer_auto_accepted` | Processor | Midnight cron, no response | None | `FARMER_AUTO_ACCEPTED` |
+| 18 | `bwg_vehicle_arrived` | BWG | Collector taps Arrived at the BWG | None | *(wa-templates only)* |
+| 19 | `bwg_no_show_warning_1` | BWG | 1st no-show (BWG Unavailable) | None | *(wa-templates only)* |
+| 20 | `bwg_no_show_warning_2` | BWG | 2nd no-show — restriction warning | None | *(wa-templates only)* |
+| 21 | `bwg_account_suspended` | BWG | 3rd no-show — account suspended | None | *(wa-templates only)* |
 
 **Not Meta templates:** Collector mid-flow buttons (Enroute → Arrived → Full/Partial → In Transit → Arrived) are **session interactive messages** sent via API within the 24h window. Prompt text: `COLLECTOR_ACTION_PROMPT` in `templates.ts`.
 
@@ -58,6 +62,14 @@ Template names must match `WA_TEMPLATE_NAMES` in `wa-templates.ts`. Button paylo
          ├─ [Meta] bwg_pickup_partial + admin_pickup_partial + farmer_delivery_eta
          └─[Session] In Transit → in_transit
          (BWG/admin must schedule a new pickup for the remainder — no auto-duplicate)
+
+[Session] Arrived → arrived_bwg
+         ├─ [Meta] bwg_vehicle_arrived (BWG notified vehicle has arrived)
+         └─[Session] Full Pickup → full_pickup · Partial Pickup → partial_pickup · BWG Unavailable → bwg_unavailable
+
+[Session] BWG Unavailable → bwg_unavailable (no-show; pickup closed, no credit refund)
+         ├─ vehicle released from job if it is the only grouped pickup
+         └─ [Meta] bwg_no_show_warning_1 (1st) / bwg_no_show_warning_2 (2nd) / bwg_account_suspended (3rd → org suspended)
 
 [Session] Arrived → arrived_processor
          ├─ [Meta] bwg_delivery_confirmed
@@ -94,7 +106,7 @@ Template names must match `WA_TEMPLATE_NAMES` in `wa-templates.ts`. Button paylo
 |--------------|-----------------|------------|
 | `driver_accepted` | Enroute · Breakdown | `enroute` · `breakdown` |
 | `enroute` | Arrived · Breakdown | `arrived_bwg` · `breakdown` |
-| `arrived_bwg` | Full Pickup · Partial Pickup | `full_pickup` · `partial_pickup` |
+| `arrived_bwg` | Full Pickup · Partial Pickup · BWG Unavailable | `full_pickup` · `partial_pickup` · `bwg_unavailable` |
 | `full_pickup` or `partial_pickup` | In Transit | `in_transit` |
 | `in_transit` | Arrived | `arrived_processor` |
 
@@ -692,6 +704,126 @@ No response received. Delivery has been marked as accepted.
 
 ---
 
+## 18. `bwg_vehicle_arrived` (BWG)
+
+**When sent:** Collector taps Arrived at the BWG (`arrived_bwg`).
+
+**Buttons:** None
+
+**Body variables:** 4
+
+```
+GreensBrowns — Your collection vehicle has arrived.
+Please have your waste ready for handover.
+Date: {{1}}
+Time slot: {{2}}
+
+Job {{3}} | {{4}}
+```
+
+| Var | Maps to |
+|-----|---------|
+| {{1}} | Pickup date (DD/MM/YYYY) |
+| {{2}} | Time slot label |
+| {{3}} | Job number |
+| {{4}} | BWG name |
+
+**Footer:** `GreensBrowns waste collection`
+
+---
+
+## 19. `bwg_no_show_warning_1` (BWG)
+
+**When sent:** First no-show — collector arrived but BWG was unavailable (`bwg_unavailable`, no_show_count = 1).
+
+**Buttons:** None
+
+**Body variables:** 4
+
+```
+GreensBrowns — Missed pickup.
+Our collector arrived but no one was available to hand over the waste.
+The pickup credit for this collection is not refunded.
+Date: {{1}}
+Time slot: {{2}}
+
+This is your first recorded no-show. Repeated no-shows may lead to account suspension.
+
+Job {{3}} | {{4}}
+```
+
+| Var | Maps to |
+|-----|---------|
+| {{1}} | Pickup date (DD/MM/YYYY) |
+| {{2}} | Time slot label |
+| {{3}} | Job number |
+| {{4}} | BWG name |
+
+**Footer:** `GreensBrowns waste collection`
+
+---
+
+## 20. `bwg_no_show_warning_2` (BWG)
+
+**When sent:** Second no-show (`bwg_unavailable`, no_show_count = 2) — account restriction warning.
+
+**Buttons:** None
+
+**Body variables:** 4
+
+```
+GreensBrowns — Second missed pickup.
+Our collector again arrived but no one was available. The pickup credit is not refunded.
+Date: {{1}}
+Time slot: {{2}}
+
+Warning: one more no-show will result in your organization's account being suspended, and you will not be able to schedule pickups or purchase plans.
+
+Job {{3}} | {{4}}
+```
+
+| Var | Maps to |
+|-----|---------|
+| {{1}} | Pickup date (DD/MM/YYYY) |
+| {{2}} | Time slot label |
+| {{3}} | Job number |
+| {{4}} | BWG name |
+
+**Footer:** `GreensBrowns waste collection`
+
+---
+
+## 21. `bwg_account_suspended` (BWG)
+
+**When sent:** Third no-show (`bwg_unavailable`, no_show_count = 3) — organization account auto-suspended.
+
+**Buttons:** None
+
+**Body variables:** 4
+
+```
+GreensBrowns — Account suspended.
+Following a third missed pickup, your organization's account has been suspended.
+You can still log in, but you cannot schedule pickups or purchase plans until reactivated.
+Date: {{1}}
+Time slot: {{2}}
+
+Please contact GreensBrowns support to restore your account.
+
+Job {{3}} | {{4}}
+```
+
+| Var | Maps to |
+|-----|---------|
+| {{1}} | Pickup date (DD/MM/YYYY) |
+| {{2}} | Time slot label |
+| {{3}} | Job number |
+| {{4}} | BWG name |
+
+**Footer:** `GreensBrowns waste collection`
+
+---
+
 ## Deprecated
 
 - **`farmer_waste_processed`** — removed. Do not create in new Meta account.
@@ -700,9 +832,11 @@ No response received. Delivery has been marked as accepted.
 
 ## New Meta Business Suite setup checklist
 
-1. Create all **15** templates above with exact names and variable counts.
+1. Create all **21** templates above with exact names and variable counts.
 2. Add buttons only on: `bwg_pickup_requested`, `collector_job_assigned`, `collector_pickup_reminder_1h`, `farmer_delivery_confirm`. The 1h reminder has two buttons: Enroute and Breakdown.
 3. Set `META_WA_TEMPLATE_LANG` and WhatsApp API credentials in app environment.
 4. Deploy app code.
-5. Run Supabase migrations `00041`, `00042`, `00043` if not already applied.
+5. Run Supabase migrations `00041`–`00047` if not already applied. (`00046` adds the `bwg_unavailable` status; `00047` adds org `no_show_count` / `is_active` and suspended-org guards.)
 6. Send a test message for each template via `/api/test/whatsapp-flow` or a staging pickup.
+
+**Session BWG Unavailable button:** `BWG Unavailable` appears alongside Full Pickup / Partial Pickup after `arrived_bwg`. It is a session interactive button (not a Meta template), payload `bwg_unavailable`.

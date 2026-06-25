@@ -31,6 +31,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Switch } from "@/components/ui/switch";
 import { PageHeader } from "@/components/shared/page-header";
 import { EmptyState } from "@/components/shared/empty-state";
 import { DashboardSkeleton } from "@/components/shared/loading-skeleton";
@@ -59,6 +60,8 @@ interface OrgWithCounts {
   city: string;
   pincode: string | null;
   created_at: string;
+  is_active: boolean;
+  no_show_count: number | null;
   member_count: number;
   pickup_count: number;
 }
@@ -155,7 +158,7 @@ export default function AdminOrganizationsPage() {
     async function fetchOrgs() {
       const { data } = await supabase
         .from("organizations")
-        .select("id, name, org_type, address, city, pincode, created_at")
+        .select("id, name, org_type, address, city, pincode, created_at, is_active, no_show_count")
         .order("created_at", { ascending: false });
 
       if (!data) {
@@ -427,6 +430,41 @@ export default function AdminOrganizationsPage() {
     toast.success("Package rejected");
   }
 
+  async function handleToggleOrgActive(org: OrgWithCounts, nextActive: boolean) {
+    // Suspending keeps no_show_count; reactivating clears it back to NULL.
+    const update = nextActive
+      ? { is_active: true, no_show_count: null }
+      : { is_active: false };
+
+    const { error } = await supabase
+      .from("organizations")
+      .update(update)
+      .eq("id", org.id);
+
+    if (error) {
+      toast.error("Failed to update organization status");
+      return;
+    }
+
+    setOrgs((prev) =>
+      prev.map((o) =>
+        o.id === org.id
+          ? {
+              ...o,
+              is_active: nextActive,
+              no_show_count: nextActive ? null : o.no_show_count,
+            }
+          : o,
+      ),
+    );
+
+    toast.success(
+      nextActive
+        ? `${org.name} reactivated`
+        : `${org.name} suspended`,
+    );
+  }
+
   async function handleCreateOrg() {
     if (!newOrg.name.trim() || !newOrg.address.trim()) {
       toast.error("Organization name and address are required");
@@ -447,7 +485,7 @@ export default function AdminOrganizationsPage() {
         lat: newOrg.lat,
         lng: newOrg.lng,
       })
-      .select("id, name, org_type, address, city, pincode, created_at")
+      .select("id, name, org_type, address, city, pincode, created_at, is_active, no_show_count")
       .single();
 
     if (error) {
@@ -589,6 +627,8 @@ export default function AdminOrganizationsPage() {
                       <TableHead>Members</TableHead>
                       <TableHead>Pickups</TableHead>
                       <TableHead>Joined</TableHead>
+                      <TableHead>Status</TableHead>
+                      <TableHead>Active / Suspend</TableHead>
                       <TableHead>Actions</TableHead>
                     </TableRow>
                   </TableHeader>
@@ -633,6 +673,37 @@ export default function AdminOrganizationsPage() {
                             {formatDateDDMMYYYY(org.created_at)}
                           </TableCell>
                           <TableCell>
+                            <Badge
+                              variant="secondary"
+                              className={
+                                org.is_active
+                                  ? "bg-green-100 text-green-800"
+                                  : "bg-red-100 text-red-800"
+                              }
+                            >
+                              {org.is_active ? "Active" : "Suspended"}
+                            </Badge>
+                            {!org.is_active && org.no_show_count != null && (
+                              <span className="ml-2 text-xs text-muted-foreground">
+                                {org.no_show_count} no-show
+                                {org.no_show_count === 1 ? "" : "s"}
+                              </span>
+                            )}
+                          </TableCell>
+                          <TableCell>
+                            <Switch
+                              checked={org.is_active}
+                              onCheckedChange={(checked) =>
+                                handleToggleOrgActive(org, checked)
+                              }
+                              aria-label={
+                                org.is_active
+                                  ? "Suspend organization"
+                                  : "Reactivate organization"
+                              }
+                            />
+                          </TableCell>
+                          <TableCell>
                             <Button
                               size="sm"
                               variant="outline"
@@ -646,7 +717,7 @@ export default function AdminOrganizationsPage() {
 
                         {expandedOrgId === org.id && (
                           <TableRow key={`${org.id}-packages`}>
-                            <TableCell colSpan={8} className="bg-muted/50 p-4">
+                            <TableCell colSpan={10} className="bg-muted/50 p-4">
                               <div className="space-y-2">
                                 <h4 className="text-sm font-semibold">
                                   Assigned Packages

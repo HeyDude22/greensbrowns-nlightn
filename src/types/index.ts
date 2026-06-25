@@ -32,6 +32,8 @@ export interface Organization {
   gstin: string | null;
   signatory_name: string | null;
   signatory_designation: string | null;
+  no_show_count: number | null;
+  is_active: boolean;
   created_at: string;
   updated_at: string;
 }
