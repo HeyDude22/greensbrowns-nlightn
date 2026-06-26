@@ -38,6 +38,52 @@ Template names must match `WA_TEMPLATE_NAMES` in `wa-templates.ts`. Button paylo
 
 **Not Meta templates:** Collector mid-flow buttons (Enroute → Arrived → Full/Partial → In Transit → Arrived) are **session interactive messages** sent via API within the 24h window. Prompt text: `COLLECTOR_ACTION_PROMPT` in `templates.ts`.
 
+**Also not Meta templates:** The BWG self-service journeys (New Pickup / Pickup Status) below are **session interactive messages** — the customer opens the 24h window by sending `hi`/`pickup`, so no new approved templates are required. Only the final confirmation reuses the existing `bwg_pickup_requested` template.
+
+---
+
+## BWG self-service over WhatsApp (inbound, session messages)
+
+A registered BWG can create a pickup or check status entirely over WhatsApp. The
+customer initiates (sends `hi`, `hello`, `pickup`, or `menu`), which opens the 24h
+customer-service window and lets us reply with free-form interactive messages.
+
+Conversation state is persisted per phone in `whatsapp_conversations`
+(`conversation-state.ts`); the engine lives in `bwg-conversation.ts`. State expires
+after 1 hour of inactivity. Sending `hi`/`pickup` at any time restarts at the menu.
+
+```
+BWG → "hi" / "pickup"
+  └─[Session buttons] "Hi {name}!"  New Pickup → wa_new_pickup · Pickup Status → wa_pickup_status
+
+New Pickup (wa_new_pickup)
+  1. [Session] Org confirm — org name(s) as buttons (≤3) or list (>3) → wa_org:<id>
+       (aborts if org is suspended or has no prepaid credits)
+  2. [Session] "Send the pickup date in DD/MM/YYYY" (must be ≥ 2 days out, IST)
+  3. [Session buttons] "Date set…" Morning · Afternoon · Evening → wa_slot:<slot>
+  4. [Session] "Send 2 photos of the waste" (collected one at a time → pickup-photos bucket)
+  5. [Session] "Send any notes, or reply 'No' to skip"
+  6. Creates pickup (status=requested, consumes 1 prepaid credit)
+       └─[Meta] bwg_pickup_requested (Cancel button) — flow then continues as normal
+         (admin verifies → schedules job → etc.)
+
+Pickup Status (wa_pickup_status)
+  └─[Session list] active pickups → wa_pk:<id>
+       (excludes accepted / cancelled / bwg_unavailable + other terminal statuses; max 10)
+       └─[Session text] Pickup number, date, slot, status, assigned vehicle
+         (or "You have no active pickups.")
+```
+
+**Inbound payload reference (session, not templates):**
+
+| Button / row | Payload | Handler step |
+|--------------|---------|--------------|
+| New Pickup | `wa_new_pickup` | start new-pickup flow |
+| Pickup Status | `wa_pickup_status` | start status lookup |
+| Org choice | `wa_org:<orgId>` | `choose_org` |
+| Morning / Afternoon / Evening | `wa_slot:morning` / `:afternoon` / `:evening` | `await_slot` |
+| Pickup row | `wa_pk:<pickupId>` | `choose_pickup` |
+
 ---
 
 ## End-to-end flow

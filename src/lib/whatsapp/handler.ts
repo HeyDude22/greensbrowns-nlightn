@@ -5,14 +5,12 @@ import {
 import {
   normalizeCollectorWhatsAppChoice,
   normalizeFarmerWhatsAppChoice,
-  normalizeBwgWhatsAppChoice,
   sendTemplateFarmerDeliveryConfirm,
   sendTemplateFarmerDeliveryEta,
 } from "./wa-templates";
 import {
   sendBwgDeliveryWhatsApp,
   sendBwgPartialPickupWhatsApp,
-  sendBwgPickupCancelledWhatsApp,
   sendBwgPickupCollectedWhatsApp,
   sendBwgVehicleArrivedWhatsApp,
   sendBwgNoShowWhatsApp,
@@ -21,6 +19,7 @@ import {
   sendJobAssignedNotification,
   notifyVehicleBreakdown,
 } from "./notifications";
+import { handleBwgMessage } from "./bwg-conversation";
 import { getPickupWhatsAppContext } from "./pickup-context";
 import { COLLECTOR_ACTIVE_STATUSES } from "@/lib/pickup-status-flow";
 import { getETA } from "@/lib/google/distance-matrix";
@@ -548,57 +547,6 @@ async function handleProcessorResponse(
   return text("Please tap Accepted to confirm delivery.");
 }
 
-async function handleBwgCancelRequest(
-  profileId: string,
-): Promise<WhatsAppHandlerReply> {
-  const { data: memberships } = await supabase
-    .from("organization_members")
-    .select("organization_id")
-    .eq("user_id", profileId);
-
-  const orgIds = memberships?.map((m) => m.organization_id) ?? [];
-  if (!orgIds.length) {
-    return text("No organization linked to your account.");
-  }
-
-  const { data: pickup } = await supabase
-    .from("pickups")
-    .select("id, pickup_number, status")
-    .in("organization_id", orgIds)
-    .eq("status", "requested")
-    .order("created_at", { ascending: false })
-    .limit(1)
-    .maybeSingle();
-
-  if (!pickup) {
-    return text("No pickup request found that can be cancelled.");
-  }
-
-  const { error } = await supabase
-    .from("pickups")
-    .update({ status: "cancelled" })
-    .eq("id", pickup.id)
-    .eq("status", "requested");
-
-  if (error) {
-    console.error("[WhatsApp] BWG cancel pickup failed", { pickupId: pickup.id, error });
-    return text("Failed to cancel pickup. Please try again or use the app.");
-  }
-
-  await supabase.from("pickup_events").insert({
-    pickup_id: pickup.id,
-    status: "cancelled",
-    changed_by: profileId,
-    notes: "Cancelled via WhatsApp",
-  });
-
-  await sendBwgPickupCancelledWhatsApp(pickup.id);
-
-  return text(
-    `Pickup ${pickup.pickup_number ?? pickup.id} has been cancelled.`,
-  );
-}
-
 export async function handleIncomingMessage(
   body: WebhookMessage
 ): Promise<WhatsAppHandlerReply> {
@@ -650,13 +598,15 @@ export async function handleIncomingMessage(
   }
 
   if (profile.role === "bwg") {
-    const choice = normalizeBwgWhatsAppChoice(buttonPayload || messageBody);
-    if (choice === "cancel_pickup") {
-      return handleBwgCancelRequest(profile.id);
-    }
-    return text(
-      "Tap Cancel on your pickup request message to withdraw it, or use the GreensBrowns app.",
-    );
+    return handleBwgMessage({
+      phone,
+      profileId: profile.id,
+      profileName: profile.full_name ?? null,
+      text: messageBody,
+      buttonPayload,
+      mediaId: body.MediaId ?? "",
+      mediaType: body.MediaContentType0 ?? "",
+    });
   }
 
   if (profile.role === "farmer") {

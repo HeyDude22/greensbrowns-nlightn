@@ -1,25 +1,29 @@
-import { sendWhatsAppMessage, sendWhatsAppButtons } from "./client";
+import {
+  sendWhatsAppMessage,
+  sendWhatsAppButtons,
+  sendWhatsAppList,
+} from "./client";
 import type { WhatsAppHandlerReply } from "./types";
 
 export async function dispatchHandlerReply(
   to: string,
-  reply: WhatsAppHandlerReply
+  reply: WhatsAppHandlerReply,
 ): Promise<void> {
-  if (reply.kind === "text") {
-    await sendWhatsAppMessage(to, reply.message);
-    for (const followUp of reply.followUps ?? []) {
-      await dispatchHandlerReply(to, followUp);
-    }
-    return;
+  switch (reply.kind) {
+    case "none":
+      return;
+    case "text":
+      await sendWhatsAppMessage(to, reply.message);
+      break;
+    case "buttons":
+      await sendWhatsAppButtons(to, reply.message, reply.buttons);
+      break;
+    case "list":
+      await sendWhatsAppList(to, reply.message, reply.button, reply.sections);
+      break;
   }
 
-  await sendWhatsAppButtons(to, reply.message, reply.buttons);
-
   for (const followUp of reply.followUps ?? []) {
-    if (followUp.kind === "text") {
-      await sendWhatsAppMessage(to, followUp.message);
-    } else {
-      await sendWhatsAppButtons(to, followUp.message, followUp.buttons);
-    }
+    await dispatchHandlerReply(to, followUp);
   }
 }
