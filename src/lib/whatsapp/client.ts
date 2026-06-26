@@ -109,6 +109,49 @@ export async function sendWhatsAppButtons(
   });
 }
 
+export async function sendWhatsAppList(
+  to: string,
+  body: string,
+  button: string,
+  sections: {
+    title?: string;
+    rows: { id: string; title: string; description?: string }[];
+  }[],
+): Promise<string | null> {
+  // Meta caps: button label <= 20 chars, row title <= 24, description <= 72,
+  // and 10 rows total across all sections.
+  let remaining = 10;
+  const trimmedSections = sections
+    .map((s) => {
+      const rows = s.rows.slice(0, Math.max(0, remaining)).map((r) => ({
+        id: r.id.slice(0, 200),
+        title: r.title.slice(0, 24),
+        ...(r.description ? { description: r.description.slice(0, 72) } : {}),
+      }));
+      remaining -= rows.length;
+      return { ...(s.title ? { title: s.title.slice(0, 24) } : {}), rows };
+    })
+    .filter((s) => s.rows.length > 0);
+
+  console.log("[WhatsApp] Sending interactive list", {
+    to: formatPhone(to),
+    rowCount: trimmedSections.reduce((n, s) => n + s.rows.length, 0),
+  });
+
+  return metaSend({
+    to: formatPhone(to),
+    type: "interactive",
+    interactive: {
+      type: "list",
+      body: { text: body },
+      action: {
+        button: button.slice(0, 20),
+        sections: trimmedSections,
+      },
+    },
+  });
+}
+
 export async function sendWhatsAppImage(
   to: string,
   imageUrl: string,

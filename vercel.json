@@ -11,6 +11,7 @@
     { "path": "/api/cron/driver-no-show", "schedule": "0 7 * * *" },
     { "path": "/api/cron/driver-no-show", "schedule": "0 11 * * *" },
     { "path": "/api/cron/driver-no-show", "schedule": "0 15 * * *" },
-    { "path": "/api/cron/daily-jobs", "schedule": "30 12 * * *" }
+    { "path": "/api/cron/daily-jobs", "schedule": "30 12 * * *" },
+    { "path": "/api/cron/whatsapp-cleanup", "schedule": "30 18 * * 2" }
   ]
 }

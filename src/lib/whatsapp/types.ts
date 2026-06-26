@@ -2,6 +2,17 @@ import type { PickupStatus } from "@/types/enums";
 
 export type WhatsAppButton = { id: string; title: string };
 
+export type WhatsAppListRow = {
+  id: string;
+  title: string;
+  description?: string;
+};
+
+export type WhatsAppListSection = {
+  title?: string;
+  rows: WhatsAppListRow[];
+};
+
 export type WhatsAppHandlerReply =
   | { kind: "text"; message: string; followUps?: WhatsAppHandlerReply[] }
   | {
@@ -9,7 +20,29 @@ export type WhatsAppHandlerReply =
       message: string;
       buttons: WhatsAppButton[];
       followUps?: WhatsAppHandlerReply[];
-    };
+    }
+  | {
+      kind: "list";
+      message: string;
+      button: string;
+      sections: WhatsAppListSection[];
+      followUps?: WhatsAppHandlerReply[];
+    }
+  /** Reply already dispatched out-of-band (e.g. a Meta template); send nothing. */
+  | { kind: "none" };
+
+/** BWG self-service menu shown after a "hi"/"pickup" greeting. */
+export const BWG_MENU_BUTTONS: WhatsAppButton[] = [
+  { id: "wa_new_pickup", title: "New Pickup" },
+  { id: "wa_pickup_status", title: "Pickup Status" },
+];
+
+/** Slot picker shown during the WhatsApp new-pickup flow. */
+export const BWG_SLOT_BUTTONS: WhatsAppButton[] = [
+  { id: "wa_slot:morning", title: "Morning" },
+  { id: "wa_slot:afternoon", title: "Afternoon" },
+  { id: "wa_slot:evening", title: "Evening" },
+];
 
 /** Meta template `collector_job_assigned` quick reply */
 export const COLLECTOR_ACCEPT_JOB_BUTTON: WhatsAppButton[] = [
