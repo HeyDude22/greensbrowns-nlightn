@@ -20,6 +20,11 @@ import {
   notifyVehicleBreakdown,
 } from "./notifications";
 import { handleBwgMessage } from "./bwg-conversation";
+import {
+  isPhoneBlocked,
+  recordRateEvent,
+  isOverMessageRate,
+} from "./abuse-guard";
 import { getPickupWhatsAppContext } from "./pickup-context";
 import { COLLECTOR_ACTIVE_STATUSES } from "@/lib/pickup-status-flow";
 import { getETA } from "@/lib/google/distance-matrix";
@@ -36,6 +41,9 @@ interface WebhookMessage {
   MediaId?: string;
   MediaContentType0?: string;
   ButtonPayload?: string;
+  Latitude?: number;
+  Longitude?: number;
+  LocationAddress?: string;
 }
 
 type PickupRow = {
@@ -551,6 +559,20 @@ export async function handleIncomingMessage(
   body: WebhookMessage
 ): Promise<WhatsAppHandlerReply> {
   const phone = extractPhone(body.From);
+
+  // Abuse controls (run before any work): drop blocked phones silently, and
+  // throttle senders that exceed the inbound message rate. Silent drops avoid
+  // amplifying outbound (billable) replies during a flood.
+  if (await isPhoneBlocked(supabase, phone)) {
+    console.warn("[WhatsApp] dropping message from blocked phone", { phone });
+    return { kind: "none" };
+  }
+  await recordRateEvent(supabase, phone, "message");
+  if (await isOverMessageRate(supabase, phone)) {
+    console.warn("[WhatsApp] message rate limit exceeded", { phone });
+    return { kind: "none" };
+  }
+
   const profile = await findProfileByPhone(phone);
 
   if (!profile) {
