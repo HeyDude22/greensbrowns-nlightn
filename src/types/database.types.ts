@@ -299,6 +299,45 @@ export type Database = {
           },
         ]
       }
+      guest_requests: {
+        Row: {
+          address: string | null
+          created_at: string
+          gstin: string | null
+          id: string
+          lat: number | null
+          lng: number | null
+          org_name: string | null
+          phone: string
+          requester_name: string | null
+          updated_at: string
+        }
+        Insert: {
+          address?: string | null
+          created_at?: string
+          gstin?: string | null
+          id?: string
+          lat?: number | null
+          lng?: number | null
+          org_name?: string | null
+          phone: string
+          requester_name?: string | null
+          updated_at?: string
+        }
+        Update: {
+          address?: string | null
+          created_at?: string
+          gstin?: string | null
+          id?: string
+          lat?: number | null
+          lng?: number | null
+          org_name?: string | null
+          phone?: string
+          requester_name?: string | null
+          updated_at?: string
+        }
+        Relationships: []
+      }
       organizations: {
         Row: {
           address: string
@@ -477,17 +516,30 @@ export type Database = {
           estimated_weight_kg: number | null
           farmer_id: string | null
           farmer_responded_at: string | null
+          guest_request_id: string | null
           id: string
+          is_one_off: boolean
           loading_helper_required: boolean
           notes: string | null
           organization_id: string
+          paid_at: string | null
+          payment_link_url: string | null
+          payment_provider: string | null
+          payment_ref: string | null
+          payment_status: string | null
           photo_after_url: string | null
           photo_before_url: string | null
+          pickup_lat: number | null
+          pickup_lng: number | null
           pickup_number: string | null
           prepaid_package_id: string | null
+          quote_amount_rs: number | null
+          quoted_at: string | null
           recurrence: Database["public"]["Enums"]["recurrence_type"]
           rejection_reason: string | null
           requested_by: string
+          requester_name: string | null
+          requester_phone: string | null
           scheduled_date: string
           scheduled_slot: string | null
           status: Database["public"]["Enums"]["pickup_status"]
@@ -502,17 +554,30 @@ export type Database = {
           estimated_weight_kg?: number | null
           farmer_id?: string | null
           farmer_responded_at?: string | null
+          guest_request_id?: string | null
           id?: string
+          is_one_off?: boolean
           loading_helper_required?: boolean
           notes?: string | null
           organization_id: string
+          paid_at?: string | null
+          payment_link_url?: string | null
+          payment_provider?: string | null
+          payment_ref?: string | null
+          payment_status?: string | null
           photo_after_url?: string | null
           photo_before_url?: string | null
+          pickup_lat?: number | null
+          pickup_lng?: number | null
           pickup_number?: string | null
           prepaid_package_id?: string | null
+          quote_amount_rs?: number | null
+          quoted_at?: string | null
           recurrence?: Database["public"]["Enums"]["recurrence_type"]
           rejection_reason?: string | null
           requested_by: string
+          requester_name?: string | null
+          requester_phone?: string | null
           scheduled_date: string
           scheduled_slot?: string | null
           status?: Database["public"]["Enums"]["pickup_status"]
@@ -527,17 +592,30 @@ export type Database = {
           estimated_weight_kg?: number | null
           farmer_id?: string | null
           farmer_responded_at?: string | null
+          guest_request_id?: string | null
           id?: string
+          is_one_off?: boolean
           loading_helper_required?: boolean
           notes?: string | null
           organization_id?: string
+          paid_at?: string | null
+          payment_link_url?: string | null
+          payment_provider?: string | null
+          payment_ref?: string | null
+          payment_status?: string | null
           photo_after_url?: string | null
           photo_before_url?: string | null
+          pickup_lat?: number | null
+          pickup_lng?: number | null
           pickup_number?: string | null
           prepaid_package_id?: string | null
+          quote_amount_rs?: number | null
+          quoted_at?: string | null
           recurrence?: Database["public"]["Enums"]["recurrence_type"]
           rejection_reason?: string | null
           requested_by?: string
+          requester_name?: string | null
+          requester_phone?: string | null
           scheduled_date?: string
           scheduled_slot?: string | null
           status?: Database["public"]["Enums"]["pickup_status"]
@@ -551,6 +629,13 @@ export type Database = {
             columns: ["farmer_id"]
             isOneToOne: false
             referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "pickups_guest_request_id_fkey"
+            columns: ["guest_request_id"]
+            isOneToOne: false
+            referencedRelation: "guest_requests"
             referencedColumns: ["id"]
           },
           {

@@ -20,6 +20,14 @@ import {
   notifyVehicleBreakdown,
 } from "./notifications";
 import { handleBwgMessage } from "./bwg-conversation";
+import { handleGuestMessage } from "./guest-conversation";
+import { getConversation } from "./conversation-state";
+import {
+  isPhoneBlocked,
+  recordRateEvent,
+  isOverMessageRate,
+  isOptInKeyword,
+} from "./abuse-guard";
 import { getPickupWhatsAppContext } from "./pickup-context";
 import { COLLECTOR_ACTIVE_STATUSES } from "@/lib/pickup-status-flow";
 import { getETA } from "@/lib/google/distance-matrix";
@@ -36,6 +44,9 @@ interface WebhookMessage {
   MediaId?: string;
   MediaContentType0?: string;
   ButtonPayload?: string;
+  Latitude?: number;
+  Longitude?: number;
+  LocationAddress?: string;
 }
 
 type PickupRow = {
@@ -551,14 +562,48 @@ export async function handleIncomingMessage(
   body: WebhookMessage
 ): Promise<WhatsAppHandlerReply> {
   const phone = extractPhone(body.From);
-  const profile = await findProfileByPhone(phone);
 
-  if (!profile) {
-    return text("Your phone number is not registered. Please contact admin.");
+  // Abuse controls (run before any work): drop blocked phones silently, and
+  // throttle senders that exceed the inbound message rate. Silent drops avoid
+  // amplifying outbound (billable) replies during a flood.
+  if (await isPhoneBlocked(supabase, phone)) {
+    console.warn("[WhatsApp] dropping message from blocked phone", { phone });
+    return { kind: "none" };
+  }
+  await recordRateEvent(supabase, phone, "message");
+  if (await isOverMessageRate(supabase, phone)) {
+    console.warn("[WhatsApp] message rate limit exceeded", { phone });
+    return { kind: "none" };
   }
 
   const buttonPayload = body.ButtonPayload?.trim() || "";
   const messageBody = body.Body?.trim() || "";
+
+  const profile = await findProfileByPhone(phone);
+
+  // Non-registered senders can run the guest one-off pickup flow. Require an
+  // explicit opt-in keyword to start (avoids replying to random/spam texts),
+  // but always continue an already in-progress guest conversation.
+  if (!profile) {
+    const convo = await getConversation(supabase, phone);
+    if (
+      convo?.flow === "guest_one_off" ||
+      isOptInKeyword(buttonPayload || messageBody)
+    ) {
+      return handleGuestMessage({
+        phone,
+        text: messageBody,
+        buttonPayload,
+        mediaId: body.MediaId ?? "",
+        mediaType: body.MediaContentType0 ?? "",
+        latitude: body.Latitude,
+        longitude: body.Longitude,
+      });
+    }
+    return text(
+      "Your phone number is not registered. Reply 'pickup' to request a one-off waste collection.",
+    );
+  }
 
   if (profile.role === "collector") {
     const choice = normalizeCollectorWhatsAppChoice(

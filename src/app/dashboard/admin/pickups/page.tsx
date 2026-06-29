@@ -18,6 +18,8 @@ import {
 import { PageHeader } from "@/components/shared/page-header";
 import { EmptyState } from "@/components/shared/empty-state";
 import { DashboardSkeleton } from "@/components/shared/loading-skeleton";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { BlockedPhonesTab } from "./_blocked-phones-tab";
 import { PICKUP_STATUS_LABELS, PICKUP_STATUS_COLORS, GREEN_WASTE_DENSITY_KG_PER_M3 } from "@/lib/constants";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
@@ -32,7 +34,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { Truck, Eye, CheckCircle, ShieldCheck, Plus, Camera, ImagePlus, X, Sparkles, Loader2, CheckCheck, List, Map, HelpCircle, Lock, XCircle } from "lucide-react";
+import { Truck, Eye, CheckCircle, ShieldCheck, Plus, Camera, ImagePlus, X, Sparkles, Loader2, CheckCheck, List, Map, HelpCircle, Lock, XCircle, UserPlus, Ban, MapPin } from "lucide-react";
 import Link from "next/link";
 import type { PickupStatus, VehicleType } from "@/types";
 import { toast } from "sonner";
@@ -104,7 +106,14 @@ interface PickupWithOrg {
   waste_photo_urls: string[] | null;
   photo_before_url: string | null;
   photo_after_url: string | null;
+  is_one_off: boolean | null;
+  requester_name: string | null;
+  requester_phone: string | null;
+  payment_status: string | null;
+  pickup_lat: number | null;
+  pickup_lng: number | null;
   organizations: { name: string } | null;
+  guest_requests: { org_name: string | null; address: string | null; gstin: string | null } | null;
   pickup_trips: { count: number }[] | null;
   job_pickups: { jobs: { job_number: string } | null }[] | null;
 }
@@ -115,6 +124,7 @@ export default function AdminPickupsPage() {
   const statusFilter = searchParams.get("status") as PickupStatus | null;
   const [pickups, setPickups] = useState<PickupWithOrg[]>([]);
   const [loading, setLoading] = useState(true);
+  const [activeTab, setActiveTab] = useState("registered");
   const [markingDeliveredId, setMarkingDeliveredId] = useState<string | null>(null);
   const [markingProcessedId, setMarkingProcessedId] = useState<string | null>(null);
   const [cancellingPickupId, setCancellingPickupId] = useState<string | null>(null);
@@ -186,7 +196,7 @@ export default function AdminPickupsPage() {
     async function fetchData() {
       const { data } = await supabase
         .from("pickups")
-        .select("id, pickup_number, status, scheduled_date, scheduled_slot, estimated_weight_kg, estimated_volume_m3, vehicle_id, farmer_id, waste_photo_urls, photo_before_url, photo_after_url, organizations(name), pickup_trips(count), job_pickups(jobs(job_number))")
+        .select("id, pickup_number, status, scheduled_date, scheduled_slot, estimated_weight_kg, estimated_volume_m3, vehicle_id, farmer_id, waste_photo_urls, photo_before_url, photo_after_url, is_one_off, requester_name, requester_phone, payment_status, pickup_lat, pickup_lng, organizations(name), guest_requests(org_name, address, gstin), pickup_trips(count), job_pickups(jobs(job_number))")
         .order("scheduled_date", { ascending: false });
 
       if (data) setPickups(data as unknown as PickupWithOrg[]);
@@ -356,7 +366,7 @@ export default function AdminPickupsPage() {
     const [pickupResult, farmerResult, rateResult, vehicleResult, busyResult] = await Promise.all([
       supabase
         .from("pickups")
-        .select("id, pickup_number, estimated_weight_kg, estimated_volume_m3, scheduled_date, scheduled_slot, organizations(name, lat, lng)")
+        .select("id, pickup_number, estimated_weight_kg, estimated_volume_m3, scheduled_date, scheduled_slot, is_one_off, pickup_lat, pickup_lng, organizations(name, lat, lng), guest_requests(org_name)")
         .eq("status", "verified")
         .lte("scheduled_date", scheduledDate)
         .order("scheduled_date", { ascending: true }),
@@ -408,14 +418,17 @@ export default function AdminPickupsPage() {
     const optimizerPickups: OptimizerPickup[] = (pickupResult.data ?? []).map(
       (p: Record<string, unknown>) => {
         const org = p.organizations as Record<string, unknown> | null;
+        const guest = p.guest_requests as Record<string, unknown> | null;
         return {
           id: p.id as string,
           pickup_number: p.pickup_number as string,
-          org_name: (org?.name as string) ?? "",
+          org_name: p.is_one_off
+            ? (guest?.org_name as string) ?? "One-off pickup"
+            : (org?.name as string) ?? "",
           estimated_weight_kg: p.estimated_weight_kg as number | null,
           estimated_volume_m3: p.estimated_volume_m3 as number | null,
-          lat: (org?.lat as number) ?? null,
-          lng: (org?.lng as number) ?? null,
+          lat: (p.pickup_lat as number) ?? (org?.lat as number) ?? null,
+          lng: (p.pickup_lng as number) ?? (org?.lng as number) ?? null,
         };
       },
     );
@@ -676,6 +689,8 @@ export default function AdminPickupsPage() {
   const filteredPickups = statusFilter
     ? pickups.filter((p) => p.status === statusFilter)
     : pickups;
+  const registeredPickups = filteredPickups.filter((p) => !p.is_one_off);
+  const oneOffPickups = filteredPickups.filter((p) => p.is_one_off);
 
   return (
     <div className="space-y-6">
@@ -683,6 +698,7 @@ export default function AdminPickupsPage() {
         title="All Pickups"
         description="Monitor pickups and track status"
         action={
+          activeTab !== "registered" ? null : (
           <div className="flex gap-2">
             {viewMode === "suggest" ? (
               <>
@@ -723,6 +739,7 @@ export default function AdminPickupsPage() {
               </>
             )}
           </div>
+          )
         }
       />
 
@@ -741,6 +758,28 @@ export default function AdminPickupsPage() {
         </div>
       )}
 
+      <Tabs
+        value={activeTab}
+        onValueChange={(v) => {
+          setActiveTab(v);
+          if (v !== "registered") {
+            setViewMode("list");
+          }
+        }}
+      >
+        <TabsList>
+          <TabsTrigger value="registered">
+            <List className="mr-2 h-4 w-4" /> Registered Pickups
+          </TabsTrigger>
+          <TabsTrigger value="one_off">
+            <UserPlus className="mr-2 h-4 w-4" /> One-Off Requests
+          </TabsTrigger>
+          <TabsTrigger value="blocked">
+            <Ban className="mr-2 h-4 w-4" /> Blocked Phones
+          </TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="registered" className="mt-4 space-y-4">
       {viewMode === "suggest" ? (
         <div className="space-y-4">
           {/* Map */}
@@ -897,7 +936,7 @@ export default function AdminPickupsPage() {
             </Card>
           )}
         </div>
-      ) : filteredPickups.length === 0 ? (
+      ) : registeredPickups.length === 0 ? (
         <Card>
           <CardContent className="pt-6">
             <EmptyState
@@ -924,7 +963,7 @@ export default function AdminPickupsPage() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {filteredPickups.map((pickup) => {
+                {registeredPickups.map((pickup) => {
                   const jobNumbers = pickup.job_pickups
                     ?.map((jp) => jp.jobs?.job_number)
                     .filter(Boolean) as string[] | undefined;
@@ -1040,6 +1079,162 @@ export default function AdminPickupsPage() {
           </CardContent>
         </Card>
       )}
+        </TabsContent>
+
+        <TabsContent value="one_off" className="mt-4 space-y-4">
+          {oneOffPickups.length === 0 ? (
+            <Card>
+              <CardContent className="pt-6">
+                <EmptyState
+                  icon={UserPlus}
+                  title="No one-off requests"
+                  description="Guest one-off pickup requests submitted over WhatsApp will appear here."
+                />
+              </CardContent>
+            </Card>
+          ) : (
+            <Card>
+              <CardContent className="p-0">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Pickup #</TableHead>
+                      <TableHead>Requester</TableHead>
+                      <TableHead>Organization</TableHead>
+                      <TableHead>Date</TableHead>
+                      <TableHead>Location</TableHead>
+                      <TableHead>Payment</TableHead>
+                      <TableHead>Status</TableHead>
+                      <TableHead>Action</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {oneOffPickups.map((pickup) => (
+                      <TableRow key={pickup.id}>
+                        <TableCell className="font-medium">
+                          {pickup.pickup_number}
+                        </TableCell>
+                        <TableCell>
+                          <div className="flex flex-col">
+                            <span>{pickup.requester_name || "—"}</span>
+                            {pickup.requester_phone && (
+                              <span className="text-xs text-muted-foreground">
+                                {pickup.requester_phone}
+                              </span>
+                            )}
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          <div className="flex flex-col">
+                            <span>{pickup.guest_requests?.org_name || "—"}</span>
+                            {pickup.guest_requests?.gstin && (
+                              <span className="text-xs text-muted-foreground">
+                                GSTIN: {pickup.guest_requests.gstin}
+                              </span>
+                            )}
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          {formatDateDDMMYYYY(pickup.scheduled_date)}
+                          {pickup.scheduled_slot && (
+                            <span className="block text-xs text-muted-foreground capitalize">
+                              {pickup.scheduled_slot}
+                            </span>
+                          )}
+                        </TableCell>
+                        <TableCell>
+                          {pickup.pickup_lat != null && pickup.pickup_lng != null ? (
+                            <a
+                              href={`https://maps.google.com/?q=${pickup.pickup_lat},${pickup.pickup_lng}`}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="inline-flex items-center gap-1 text-sm text-blue-600 hover:underline"
+                            >
+                              <MapPin className="h-3 w-3" /> Map
+                            </a>
+                          ) : (
+                            <span className="text-muted-foreground">—</span>
+                          )}
+                        </TableCell>
+                        <TableCell>
+                          <Badge variant="outline" className="capitalize">
+                            {(pickup.payment_status || "awaiting_quote").replace(/_/g, " ")}
+                          </Badge>
+                        </TableCell>
+                        <TableCell>
+                          <Badge
+                            variant="secondary"
+                            className={PICKUP_STATUS_COLORS[pickup.status]}
+                          >
+                            {PICKUP_STATUS_LABELS[pickup.status]}
+                          </Badge>
+                        </TableCell>
+                        <TableCell>
+                          <div className="flex items-center gap-1">
+                            {pickup.status === "requested" && (
+                              <>
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  onClick={() => openVerifyDialog(pickup)}
+                                  title="Verify and release to scheduling (payment flow not yet built)"
+                                >
+                                  <ShieldCheck className="mr-1 h-3 w-3" />
+                                  Verify (skip payment)
+                                </Button>
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  onClick={() => handleCancelPickup(pickup.id)}
+                                  disabled={cancellingPickupId === pickup.id}
+                                >
+                                  <XCircle className="mr-1 h-3 w-3" />
+                                  {cancellingPickupId === pickup.id ? "..." : "Cancel"}
+                                </Button>
+                              </>
+                            )}
+                            {pickup.status === "in_transit" && (
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => handleMarkArrivedProcessor(pickup.id)}
+                                disabled={markingDeliveredId === pickup.id}
+                              >
+                                <CheckCircle className="mr-1 h-3 w-3" />
+                                {markingDeliveredId === pickup.id ? "..." : "Mark Arrived"}
+                              </Button>
+                            )}
+                            {pickup.status === "accepted" && (
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => handleMarkProcessed(pickup.id)}
+                                disabled={markingProcessedId === pickup.id}
+                              >
+                                <CheckCircle className="mr-1 h-3 w-3" />
+                                {markingProcessedId === pickup.id ? "..." : "Mark Processed"}
+                              </Button>
+                            )}
+                            <Button size="sm" variant="ghost" asChild>
+                              <Link href={`/dashboard/admin/pickups/${pickup.id}`}>
+                                <Eye className="h-3 w-3" />
+                              </Link>
+                            </Button>
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </CardContent>
+            </Card>
+          )}
+        </TabsContent>
+
+        <TabsContent value="blocked" className="mt-4 space-y-4">
+          <BlockedPhonesTab active={activeTab === "blocked"} />
+        </TabsContent>
+      </Tabs>
 
       {/* Schedule Pickup Dialog */}
       <Dialog open={scheduleDialogOpen} onOpenChange={setScheduleDialogOpen}>

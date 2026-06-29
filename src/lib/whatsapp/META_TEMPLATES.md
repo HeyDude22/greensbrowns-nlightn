@@ -86,6 +86,61 @@ Pickup Status (wa_pickup_status)
 
 ---
 
+## Guest one-off pickups over WhatsApp (non-registered, inbound session messages)
+
+A **non-registered** caller (no profile, org, prepaid credits, or service
+agreement) can request a single one-off pickup over WhatsApp. The flow is kept
+deliberately light — it is NOT a registration. The engine lives in
+`guest-conversation.ts`; the commit in `guest-pickup.ts`.
+
+To avoid org/profile bloat, every one-off pickup is attributed to a single
+**system guest org** (`SYSTEM_GUEST_ORG_ID`) and a single **system guest profile**
+(`SYSTEM_GUEST_PROFILE_ID`), both seeded by migration `00052`. The caller's real
+identity (name, org name, address, GSTIN, location) is stored in
+`guest_requests` (keyed by phone) so a returning guest is recognized and offered
+their saved details.
+
+Starting requires an explicit opt-in keyword (`pickup` / `new` / `start`) so we
+never reply to random/spam texts. An in-progress guest conversation always
+continues. State expires after 1 hour (`whatsapp_conversations`).
+
+```
+Non-registered → "pickup" (opt-in keyword required to start)
+  ├─ Returning guest? [Session buttons] "Welcome back…" Use saved details → guest_reuse · Start fresh → guest_fresh
+  │     (reuse jumps straight to the date step)
+  └─ New guest:
+     1. [Session] "What's your name?"
+     2. [Session] "Organization / building / society name?"
+     3. [Session] "Full pickup address?"
+     4. [Session] "Share the pickup location" (WhatsApp Location button → lat/lng)
+     5. [Session] "GSTIN, or reply 'No' to skip" (validated; 'no' skips)
+     6. [Session] "Pickup date DD/MM/YYYY" (must be ≥ 2 days out, IST)
+     7. [Session buttons] Morning · Afternoon · Evening → wa_slot:<slot>
+     8. [Session] "Send 2 photos of the waste" (collected → pickup-photos bucket under guest/)
+     9. Creates pickup (status=requested, is_one_off=true, payment_status=awaiting_quote,
+        system guest org + system guest profile, no prepaid credit consumed)
+          └─[Meta] bwg_pickup_requested (shows the guest's org name + pickup number)
+
+Abuse caps: per-phone & global daily one-off limits (abuse-guard.ts); duplicate
+guard on (requester_phone, date, slot) within 10 min; idempotency lock on commit.
+```
+
+**Admin side (webapp `Pickups` page → One-Off Requests tab):** verify/quote/QR/
+Razorpay payment is a later phase. Until then an interim **"Verify (skip
+payment)"** action moves a one-off request into the normal job pipeline (it uses
+the captured `pickup_lat`/`pickup_lng` for routing). Admins can block/unblock
+phone numbers from the **Blocked Phones** tab.
+
+**Inbound payload reference (session, not templates):**
+
+| Button / row | Payload | Handler step |
+|--------------|---------|--------------|
+| Use saved details | `guest_reuse` | `confirm_returning` |
+| Start fresh | `guest_fresh` | `confirm_returning` |
+| Morning / Afternoon / Evening | `wa_slot:morning` / `:afternoon` / `:evening` | `await_slot` |
+
+---
+
 ## End-to-end flow
 
 ```
