@@ -249,7 +249,7 @@ async function resolveBwgPhone(pickupId: string): Promise<string | null> {
   const { data: pickup } = await supabase
     .from("pickups")
     .select(
-      "id, is_one_off, requester_phone, organization_id, profiles!pickups_requested_by_fkey(phone), organizations(contact_phone)"
+      "id, is_one_off, organization_id, profiles!pickups_requested_by_fkey(phone), organizations(contact_phone), guest_requests(phone)"
     )
     .eq("id", pickupId)
     .single();
@@ -257,9 +257,10 @@ async function resolveBwgPhone(pickupId: string): Promise<string | null> {
   if (!pickup) return null;
 
   // One-off pickups are attributed to the system guest profile (no phone) and
-  // the system guest org — the real contact is the caller's requester_phone.
-  if (pickup.is_one_off && pickup.requester_phone) {
-    return pickup.requester_phone as string;
+  // the system guest org — the real contact is the linked guest_requests phone.
+  if (pickup.is_one_off) {
+    const guest = pickup.guest_requests as unknown as { phone: string | null } | null;
+    if (guest?.phone) return guest.phone;
   }
 
   const profile = pickup.profiles as unknown as { phone: string | null };

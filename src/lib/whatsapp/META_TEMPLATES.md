@@ -117,19 +117,29 @@ Non-registered → "pickup" (opt-in keyword required to start)
      6. [Session] "Pickup date DD/MM/YYYY" (must be ≥ 2 days out, IST)
      7. [Session buttons] Morning · Afternoon · Evening → wa_slot:<slot>
      8. [Session] "Send 2 photos of the waste" (collected → pickup-photos bucket under guest/)
-     9. Creates pickup (status=requested, is_one_off=true, payment_status=awaiting_quote,
-        system guest org + system guest profile, no prepaid credit consumed)
+     9. Creates pickup (status=requested, is_one_off=true, system guest org +
+        system guest profile, no prepaid credit consumed) + a `payments` row
+        (status=awaiting_quote). Requester identity stays in `guest_requests`.
           └─[Meta] bwg_pickup_requested (shows the guest's org name + pickup number)
+              └─ Cancel → cancel_pickup: cancels the request ONLY while it is
+                 still `requested` (before admin verification). After
+                 verification the guest is told to contact support.
 
 Abuse caps: per-phone & global daily one-off limits (abuse-guard.ts); duplicate
-guard on (requester_phone, date, slot) within 10 min; idempotency lock on commit.
+guard on (guest_request, date, slot) within 10 min; idempotency lock on commit.
+
+Data model: requester name/phone/org/address/GSTIN live in `guest_requests`
+(linked by `pickups.guest_request_id`), NOT duplicated on the pickup. Payment
+details live in the `payments` table (one row per pickup), NOT on the pickup.
+Only `pickup_lat`/`pickup_lng` are snapshotted on the pickup (for routing).
 ```
 
 **Admin side (webapp `Pickups` page → One-Off Requests tab):** verify/quote/QR/
 Razorpay payment is a later phase. Until then an interim **"Verify (skip
 payment)"** action moves a one-off request into the normal job pipeline (it uses
-the captured `pickup_lat`/`pickup_lng` for routing). Admins can block/unblock
-phone numbers from the **Blocked Phones** tab.
+the captured `pickup_lat`/`pickup_lng` for routing). Payment status is read from
+the `payments` table. Admins can block/unblock phone numbers from the **Blocked
+Phones** tab.
 
 **Inbound payload reference (session, not templates):**
 
@@ -138,6 +148,7 @@ phone numbers from the **Blocked Phones** tab.
 | Use saved details | `guest_reuse` | `confirm_returning` |
 | Start fresh | `guest_fresh` | `confirm_returning` |
 | Morning / Afternoon / Evening | `wa_slot:morning` / `:afternoon` / `:evening` | `await_slot` |
+| Cancel (one-off template) | `cancel_pickup` | guest cancel (only while `requested`) |
 
 ---
 

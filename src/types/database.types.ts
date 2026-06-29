@@ -508,6 +508,56 @@ export type Database = {
           },
         ]
       }
+      payments: {
+        Row: {
+          created_at: string
+          id: string
+          paid_at: string | null
+          payment_link_url: string | null
+          payment_ref: string | null
+          pickup_id: string
+          provider: string | null
+          quote_amount_rs: number | null
+          quoted_at: string | null
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          paid_at?: string | null
+          payment_link_url?: string | null
+          payment_ref?: string | null
+          pickup_id: string
+          provider?: string | null
+          quote_amount_rs?: number | null
+          quoted_at?: string | null
+          status?: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          paid_at?: string | null
+          payment_link_url?: string | null
+          payment_ref?: string | null
+          pickup_id?: string
+          provider?: string | null
+          quote_amount_rs?: number | null
+          quoted_at?: string | null
+          status?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "payments_pickup_id_fkey"
+            columns: ["pickup_id"]
+            isOneToOne: true
+            referencedRelation: "pickups"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       pickups: {
         Row: {
           actual_weight_kg: number | null
@@ -522,24 +572,15 @@ export type Database = {
           loading_helper_required: boolean
           notes: string | null
           organization_id: string
-          paid_at: string | null
-          payment_link_url: string | null
-          payment_provider: string | null
-          payment_ref: string | null
-          payment_status: string | null
           photo_after_url: string | null
           photo_before_url: string | null
           pickup_lat: number | null
           pickup_lng: number | null
           pickup_number: string | null
           prepaid_package_id: string | null
-          quote_amount_rs: number | null
-          quoted_at: string | null
           recurrence: Database["public"]["Enums"]["recurrence_type"]
           rejection_reason: string | null
           requested_by: string
-          requester_name: string | null
-          requester_phone: string | null
           scheduled_date: string
           scheduled_slot: string | null
           status: Database["public"]["Enums"]["pickup_status"]
@@ -560,24 +601,15 @@ export type Database = {
           loading_helper_required?: boolean
           notes?: string | null
           organization_id: string
-          paid_at?: string | null
-          payment_link_url?: string | null
-          payment_provider?: string | null
-          payment_ref?: string | null
-          payment_status?: string | null
           photo_after_url?: string | null
           photo_before_url?: string | null
           pickup_lat?: number | null
           pickup_lng?: number | null
           pickup_number?: string | null
           prepaid_package_id?: string | null
-          quote_amount_rs?: number | null
-          quoted_at?: string | null
           recurrence?: Database["public"]["Enums"]["recurrence_type"]
           rejection_reason?: string | null
           requested_by: string
-          requester_name?: string | null
-          requester_phone?: string | null
           scheduled_date: string
           scheduled_slot?: string | null
           status?: Database["public"]["Enums"]["pickup_status"]
@@ -598,24 +630,15 @@ export type Database = {
           loading_helper_required?: boolean
           notes?: string | null
           organization_id?: string
-          paid_at?: string | null
-          payment_link_url?: string | null
-          payment_provider?: string | null
-          payment_ref?: string | null
-          payment_status?: string | null
           photo_after_url?: string | null
           photo_before_url?: string | null
           pickup_lat?: number | null
           pickup_lng?: number | null
           pickup_number?: string | null
           prepaid_package_id?: string | null
-          quote_amount_rs?: number | null
-          quoted_at?: string | null
           recurrence?: Database["public"]["Enums"]["recurrence_type"]
           rejection_reason?: string | null
           requested_by?: string
-          requester_name?: string | null
-          requester_phone?: string | null
           scheduled_date?: string
           scheduled_slot?: string | null
           status?: Database["public"]["Enums"]["pickup_status"]

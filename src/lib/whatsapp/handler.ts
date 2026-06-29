@@ -20,8 +20,9 @@ import {
   notifyVehicleBreakdown,
 } from "./notifications";
 import { handleBwgMessage } from "./bwg-conversation";
-import { handleGuestMessage } from "./guest-conversation";
+import { handleGuestMessage, handleGuestCancel } from "./guest-conversation";
 import { getConversation } from "./conversation-state";
+import { normalizeBwgWhatsAppChoice } from "./wa-templates";
 import {
   isPhoneBlocked,
   recordRateEvent,
@@ -585,6 +586,12 @@ export async function handleIncomingMessage(
   // explicit opt-in keyword to start (avoids replying to random/spam texts),
   // but always continue an already in-progress guest conversation.
   if (!profile) {
+    // Guest taps Cancel on the bwg_pickup_requested template (no conversation
+    // is active at that point) — cancel the still-`requested` one-off pickup.
+    if (normalizeBwgWhatsAppChoice(buttonPayload || messageBody) === "cancel_pickup") {
+      return handleGuestCancel(phone);
+    }
+
     const convo = await getConversation(supabase, phone);
     if (
       convo?.flow === "guest_one_off" ||
