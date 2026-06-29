@@ -106,7 +106,7 @@ export async function createGuestPickup(
     .from("pickups")
     .select("id, pickup_number")
     .eq("is_one_off", true)
-    .eq("requester_phone", normalizedPhone)
+    .eq("guest_request_id", guest.id)
     .eq("scheduled_date", args.scheduledDate)
     .eq("scheduled_slot", args.scheduledSlot)
     .not("status", "in", inactiveList)
@@ -131,7 +131,6 @@ export async function createGuestPickup(
       requested_by: SYSTEM_GUEST_PROFILE_ID,
       status: "requested",
       is_one_off: true,
-      payment_status: "awaiting_quote",
       scheduled_date: args.scheduledDate,
       scheduled_slot: args.scheduledSlot,
       notes: args.notes,
@@ -139,8 +138,6 @@ export async function createGuestPickup(
       waste_photo_urls: args.photoUrls,
       pickup_lat: args.lat,
       pickup_lng: args.lng,
-      requester_name: args.requesterName,
-      requester_phone: normalizedPhone,
       guest_request_id: guest.id,
     })
     .select("id, pickup_number")
@@ -153,6 +150,16 @@ export async function createGuestPickup(
       message:
         "Sorry, I couldn't create the pickup request. Please try again in a moment.",
     };
+  }
+
+  // Payment details live in the payments table, not on the pickup. Seed an
+  // awaiting-quote row; the quote/QR/Razorpay flow fills it in a later phase.
+  const { error: paymentErr } = await supabase.from("payments").insert({
+    pickup_id: pickup.id,
+    status: "awaiting_quote",
+  });
+  if (paymentErr) {
+    console.error("[WhatsApp] guest payment row insert failed", paymentErr);
   }
 
   await supabase.from("pickup_events").insert({

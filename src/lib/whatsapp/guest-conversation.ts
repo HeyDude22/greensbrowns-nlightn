@@ -21,6 +21,9 @@ import {
 } from "./flow-helpers";
 import { BWG_SLOT_BUTTONS, type WhatsAppHandlerReply } from "./types";
 import { createGuestPickup } from "./guest-pickup";
+import { sendBwgPickupCancelledWhatsApp } from "./notifications";
+
+const SYSTEM_GUEST_PROFILE_ID = process.env.SYSTEM_GUEST_PROFILE_ID ?? "";
 
 /** Normalized inbound message handed to the guest one-off conversation engine. */
 export interface GuestIncoming {
@@ -487,6 +490,81 @@ async function stepAwaitPhotos(
   // Success: photos now belong to the pickup. The confirmation template
   // (bwg_pickup_requested) was already sent by createGuestPickup.
   await clearConversation(supabase, input.phone);
+  return { kind: "none" };
+}
+
+// --- Cancel (Cancel button on the bwg_pickup_requested template) ---
+
+/**
+ * A guest can cancel their one-off request only while it is still `requested`
+ * (i.e. before an admin verifies it). After verification, cancellation over
+ * WhatsApp is no longer allowed and the guest is told to contact support.
+ */
+export async function handleGuestCancel(
+  phone: string,
+): Promise<WhatsAppHandlerReply> {
+  const supabase = createAdminClient();
+  const normalizedPhone = phone.replace(/\D/g, "");
+
+  const { data: guest } = await supabase
+    .from("guest_requests")
+    .select("id")
+    .eq("phone", normalizedPhone)
+    .maybeSingle();
+
+  if (!guest) {
+    return text("No one-off pickup request was found for this number.");
+  }
+
+  const { data: pickup } = await supabase
+    .from("pickups")
+    .select("id, pickup_number, status")
+    .eq("is_one_off", true)
+    .eq("guest_request_id", guest.id)
+    .eq("status", "requested")
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (!pickup) {
+    return text(
+      "This pickup can no longer be cancelled here — it has already been processed by our team. Please contact GreensBrowns support for any changes.",
+    );
+  }
+
+  // Guarded update: only cancels if still 'requested', so an admin verification
+  // that lands at the same moment wins and the cancel becomes a no-op.
+  const { data: cancelled, error } = await supabase
+    .from("pickups")
+    .update({ status: "cancelled" })
+    .eq("id", pickup.id)
+    .eq("status", "requested")
+    .select("id");
+
+  if (error || !cancelled || cancelled.length === 0) {
+    if (error) {
+      console.error("[WhatsApp] guest cancel failed", { pickupId: pickup.id, error });
+      return text("Sorry, I couldn't cancel the pickup. Please try again.");
+    }
+    return text(
+      "This pickup can no longer be cancelled here — it has already been processed by our team. Please contact GreensBrowns support for any changes.",
+    );
+  }
+
+  await supabase
+    .from("payments")
+    .update({ status: "cancelled" })
+    .eq("pickup_id", pickup.id);
+
+  await supabase.from("pickup_events").insert({
+    pickup_id: pickup.id,
+    status: "cancelled",
+    changed_by: SYSTEM_GUEST_PROFILE_ID || null,
+    notes: "One-off pickup cancelled by guest via WhatsApp",
+  });
+
+  // Confirmation is the approved bwg_pickup_cancelled template.
+  await sendBwgPickupCancelledWhatsApp(pickup.id);
   return { kind: "none" };
 }
 

@@ -107,13 +107,17 @@ interface PickupWithOrg {
   photo_before_url: string | null;
   photo_after_url: string | null;
   is_one_off: boolean | null;
-  requester_name: string | null;
-  requester_phone: string | null;
-  payment_status: string | null;
   pickup_lat: number | null;
   pickup_lng: number | null;
   organizations: { name: string } | null;
-  guest_requests: { org_name: string | null; address: string | null; gstin: string | null } | null;
+  guest_requests: {
+    requester_name: string | null;
+    phone: string | null;
+    org_name: string | null;
+    address: string | null;
+    gstin: string | null;
+  } | null;
+  payments: { status: string; quote_amount_rs: number | null }[] | { status: string; quote_amount_rs: number | null } | null;
   pickup_trips: { count: number }[] | null;
   job_pickups: { jobs: { job_number: string } | null }[] | null;
 }
@@ -196,7 +200,7 @@ export default function AdminPickupsPage() {
     async function fetchData() {
       const { data } = await supabase
         .from("pickups")
-        .select("id, pickup_number, status, scheduled_date, scheduled_slot, estimated_weight_kg, estimated_volume_m3, vehicle_id, farmer_id, waste_photo_urls, photo_before_url, photo_after_url, is_one_off, requester_name, requester_phone, payment_status, pickup_lat, pickup_lng, organizations(name), guest_requests(org_name, address, gstin), pickup_trips(count), job_pickups(jobs(job_number))")
+        .select("id, pickup_number, status, scheduled_date, scheduled_slot, estimated_weight_kg, estimated_volume_m3, vehicle_id, farmer_id, waste_photo_urls, photo_before_url, photo_after_url, is_one_off, pickup_lat, pickup_lng, organizations(name), guest_requests(requester_name, phone, org_name, address, gstin), payments(status, quote_amount_rs), pickup_trips(count), job_pickups(jobs(job_number))")
         .order("scheduled_date", { ascending: false });
 
       if (data) setPickups(data as unknown as PickupWithOrg[]);
@@ -1116,10 +1120,10 @@ export default function AdminPickupsPage() {
                         </TableCell>
                         <TableCell>
                           <div className="flex flex-col">
-                            <span>{pickup.requester_name || "—"}</span>
-                            {pickup.requester_phone && (
+                            <span>{pickup.guest_requests?.requester_name || "—"}</span>
+                            {pickup.guest_requests?.phone && (
                               <span className="text-xs text-muted-foreground">
-                                {pickup.requester_phone}
+                                {pickup.guest_requests.phone}
                               </span>
                             )}
                           </div>
@@ -1157,9 +1161,24 @@ export default function AdminPickupsPage() {
                           )}
                         </TableCell>
                         <TableCell>
-                          <Badge variant="outline" className="capitalize">
-                            {(pickup.payment_status || "awaiting_quote").replace(/_/g, " ")}
-                          </Badge>
+                          {(() => {
+                            const payment = Array.isArray(pickup.payments)
+                              ? pickup.payments[0]
+                              : pickup.payments;
+                            const status = payment?.status || "awaiting_quote";
+                            return (
+                              <div className="flex flex-col">
+                                <Badge variant="outline" className="capitalize">
+                                  {status.replace(/_/g, " ")}
+                                </Badge>
+                                {payment?.quote_amount_rs != null && (
+                                  <span className="text-xs text-muted-foreground mt-0.5">
+                                    ₹{payment.quote_amount_rs.toLocaleString("en-IN")}
+                                  </span>
+                                )}
+                              </div>
+                            );
+                          })()}
                         </TableCell>
                         <TableCell>
                           <Badge
