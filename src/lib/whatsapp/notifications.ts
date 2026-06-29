@@ -249,12 +249,18 @@ async function resolveBwgPhone(pickupId: string): Promise<string | null> {
   const { data: pickup } = await supabase
     .from("pickups")
     .select(
-      "id, organization_id, profiles!pickups_requested_by_fkey(phone), organizations(contact_phone)"
+      "id, is_one_off, requester_phone, organization_id, profiles!pickups_requested_by_fkey(phone), organizations(contact_phone)"
     )
     .eq("id", pickupId)
     .single();
 
   if (!pickup) return null;
+
+  // One-off pickups are attributed to the system guest profile (no phone) and
+  // the system guest org — the real contact is the caller's requester_phone.
+  if (pickup.is_one_off && pickup.requester_phone) {
+    return pickup.requester_phone as string;
+  }
 
   const profile = pickup.profiles as unknown as { phone: string | null };
   const org = pickup.organizations as unknown as { contact_phone: string | null };
@@ -265,7 +271,9 @@ async function resolveBwgPhone(pickupId: string): Promise<string | null> {
 export async function sendBwgPickupRequestedWhatsApp(pickupId: string) {
   const { data: pickup } = await supabase
     .from("pickups")
-    .select("id, pickup_number, scheduled_date, scheduled_slot, organizations(name)")
+    .select(
+      "id, pickup_number, scheduled_date, scheduled_slot, is_one_off, organizations(name), guest_requests(org_name)"
+    )
     .eq("id", pickupId)
     .single();
 
@@ -277,10 +285,15 @@ export async function sendBwgPickupRequestedWhatsApp(pickupId: string) {
     return;
   }
 
-  const org = pickup.organizations as unknown as { name: string };
+  const org = pickup.organizations as unknown as { name: string } | null;
+  const guest = pickup.guest_requests as unknown as { org_name: string | null } | null;
+  // For one-off pickups the org is the sentinel; show the guest's org name.
+  const orgName = pickup.is_one_off
+    ? guest?.org_name ?? "One-off pickup"
+    : org?.name ?? "—";
   const messageId = await sendTemplateBwgPickupRequested(phone, {
     pickupNumber: pickup.pickup_number ?? pickupId,
-    orgName: org?.name ?? "—",
+    orgName,
     date: formatDateDDMMYYYY(pickup.scheduled_date),
     slot: pickup.scheduled_slot,
   });

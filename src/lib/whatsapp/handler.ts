@@ -20,10 +20,13 @@ import {
   notifyVehicleBreakdown,
 } from "./notifications";
 import { handleBwgMessage } from "./bwg-conversation";
+import { handleGuestMessage } from "./guest-conversation";
+import { getConversation } from "./conversation-state";
 import {
   isPhoneBlocked,
   recordRateEvent,
   isOverMessageRate,
+  isOptInKeyword,
 } from "./abuse-guard";
 import { getPickupWhatsAppContext } from "./pickup-context";
 import { COLLECTOR_ACTIVE_STATUSES } from "@/lib/pickup-status-flow";
@@ -573,14 +576,34 @@ export async function handleIncomingMessage(
     return { kind: "none" };
   }
 
-  const profile = await findProfileByPhone(phone);
-
-  if (!profile) {
-    return text("Your phone number is not registered. Please contact admin.");
-  }
-
   const buttonPayload = body.ButtonPayload?.trim() || "";
   const messageBody = body.Body?.trim() || "";
+
+  const profile = await findProfileByPhone(phone);
+
+  // Non-registered senders can run the guest one-off pickup flow. Require an
+  // explicit opt-in keyword to start (avoids replying to random/spam texts),
+  // but always continue an already in-progress guest conversation.
+  if (!profile) {
+    const convo = await getConversation(supabase, phone);
+    if (
+      convo?.flow === "guest_one_off" ||
+      isOptInKeyword(buttonPayload || messageBody)
+    ) {
+      return handleGuestMessage({
+        phone,
+        text: messageBody,
+        buttonPayload,
+        mediaId: body.MediaId ?? "",
+        mediaType: body.MediaContentType0 ?? "",
+        latitude: body.Latitude,
+        longitude: body.Longitude,
+      });
+    }
+    return text(
+      "Your phone number is not registered. Reply 'pickup' to request a one-off waste collection.",
+    );
+  }
 
   if (profile.role === "collector") {
     const choice = normalizeCollectorWhatsAppChoice(

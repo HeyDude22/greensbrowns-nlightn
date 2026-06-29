@@ -6,7 +6,6 @@ import {
   pickupStatusLabel,
 } from "@/lib/pickup-status-flow";
 import { selectFifoPrepaidPackage } from "@/lib/prepaid-credits";
-import { downloadMedia } from "./client";
 import { normalizeBwgWhatsAppChoice } from "./wa-templates";
 import {
   sendBwgPickupRequestedWhatsApp,
@@ -27,6 +26,14 @@ import {
   type WhatsAppButton,
   type WhatsAppHandlerReply,
 } from "./types";
+import {
+  SLOTS,
+  type Slot,
+  slotTitle,
+  minPickupDateISO,
+  parseUserDate,
+  storeWastePhoto,
+} from "./flow-helpers";
 
 /** Normalized inbound message handed to the BWG conversation engine. */
 export interface BwgIncoming {
@@ -38,15 +45,6 @@ export interface BwgIncoming {
   mediaId: string;
   mediaType: string;
 }
-
-const SLOTS = ["morning", "afternoon", "evening"] as const;
-type Slot = (typeof SLOTS)[number];
-
-const SLOT_TITLES: Record<string, string> = {
-  morning: "Morning (6am - 12pm)",
-  afternoon: "Afternoon (12pm - 4pm)",
-  evening: "Evening (4pm - 8pm)",
-};
 
 const GREETINGS = new Set([
   "hi",
@@ -65,58 +63,6 @@ const INACTIVE_STATUSES = [...PICKUP_TERMINAL_STATUSES, "accepted"];
 
 function text(message: string): WhatsAppHandlerReply {
   return { kind: "text", message };
-}
-
-function slotTitle(slot: string | null): string {
-  return slot ? SLOT_TITLES[slot] ?? slot : "TBD";
-}
-
-function pad(n: number): string {
-  return String(n).padStart(2, "0");
-}
-
-// --- Date helpers (IST: pickups must be >= 2 days from "today" in India) ---
-
-const IST_OFFSET_MS = 5.5 * 60 * 60 * 1000;
-
-function minPickupDateISO(): string {
-  const ist = new Date(Date.now() + IST_OFFSET_MS);
-  ist.setUTCDate(ist.getUTCDate() + 2);
-  return `${ist.getUTCFullYear()}-${pad(ist.getUTCMonth() + 1)}-${pad(ist.getUTCDate())}`;
-}
-
-/** Parse DD/MM/YYYY (also D-M-YYYY, DD/MM/YY, YYYY-MM-DD) into yyyy-mm-dd. */
-function parseUserDate(input: string): string | null {
-  const t = input.trim();
-  let y: number, mo: number, d: number;
-
-  let m = t.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
-  if (m) {
-    y = +m[1];
-    mo = +m[2];
-    d = +m[3];
-  } else if ((m = t.match(/^(\d{1,2})[/\-.](\d{1,2})[/\-.](\d{4})$/))) {
-    d = +m[1];
-    mo = +m[2];
-    y = +m[3];
-  } else if ((m = t.match(/^(\d{1,2})[/\-.](\d{1,2})[/\-.](\d{2})$/))) {
-    d = +m[1];
-    mo = +m[2];
-    y = 2000 + +m[3];
-  } else {
-    return null;
-  }
-
-  if (mo < 1 || mo > 12 || d < 1 || d > 31) return null;
-  const dt = new Date(Date.UTC(y, mo - 1, d));
-  if (
-    dt.getUTCFullYear() !== y ||
-    dt.getUTCMonth() !== mo - 1 ||
-    dt.getUTCDate() !== d
-  ) {
-    return null;
-  }
-  return `${y}-${pad(mo)}-${pad(d)}`;
 }
 
 // --- Organization + credit lookups ---
@@ -165,46 +111,6 @@ async function getFifoPackageId(
 
   const pkg = data ? selectFifoPrepaidPackage(data) : null;
   return pkg?.id ?? null;
-}
-
-// --- Media ---
-
-function extensionForMime(mime: string): string {
-  if (mime.includes("png")) return "png";
-  if (mime.includes("webp")) return "webp";
-  return "jpg";
-}
-
-async function storeWastePhoto(
-  supabase: SupabaseClient,
-  mediaId: string,
-  orgId: string,
-  mime: string,
-): Promise<string | null> {
-  try {
-    const buffer = await downloadMedia(mediaId);
-    const ext = extensionForMime(mime);
-    const contentType = mime.startsWith("image/") ? mime : "image/jpeg";
-    const fileName = `${orgId}/${Date.now()}-${Math.random()
-      .toString(36)
-      .slice(2)}.${ext}`;
-
-    const { error } = await supabase.storage
-      .from("pickup-photos")
-      .upload(fileName, buffer, { contentType });
-    if (error) {
-      console.error("[WhatsApp] waste photo upload failed", { orgId, error });
-      return null;
-    }
-
-    const { data } = supabase.storage
-      .from("pickup-photos")
-      .getPublicUrl(fileName);
-    return data.publicUrl;
-  } catch (err) {
-    console.error("[WhatsApp] waste photo download/upload error", err);
-    return null;
-  }
 }
 
 // --- Replies / prompts ---

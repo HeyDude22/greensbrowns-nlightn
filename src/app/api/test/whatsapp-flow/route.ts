@@ -7,12 +7,18 @@ import { createAdminClient } from "@/lib/supabase/admin";
  *
  * GET /api/test/whatsapp-flow?step=seed|job-assigned|driver-flow|processor-arrival|farmer-accepted|auto-accept|cleanup
  *
+ * Self-contained branches (seed themselves, run, clean up):
+ *   step=bwg-unavailable  — BWG no-show flow
+ *   step=guest-one-off    — guest (non-registered) one-off pickup state machine
+ *
  * Run steps in order, or use step=all to run the full happy path.
  */
 
 const TEST_COLLECTOR_PHONE = "9199999900001";
 const TEST_FARMER_PHONE = "9199999900002";
 const TEST_BWG_EMAIL = "test-bwg@a-gain.in";
+/** A phone with no matching profile — used for the guest one-off flow test. */
+const TEST_GUEST_PHONE = "9199999900009";
 
 const supabase = createAdminClient();
 
@@ -94,6 +100,34 @@ async function simulateImageWebhook(
                   from,
                   type: "image",
                   image: { id: mediaId, mime_type: "image/jpeg" },
+                },
+              ],
+            },
+          },
+        ],
+      },
+    ],
+  };
+  return postWebhook(baseUrl, payload);
+}
+
+async function simulateLocationWebhook(
+  baseUrl: string,
+  from: string,
+  latitude: number,
+  longitude: number,
+) {
+  const payload = {
+    entry: [
+      {
+        changes: [
+          {
+            value: {
+              messages: [
+                {
+                  from,
+                  type: "location",
+                  location: { latitude, longitude, address: "Test pickup address" },
                 },
               ],
             },
@@ -465,6 +499,88 @@ export async function GET(req: NextRequest) {
       );
 
       await cleanup();
+
+      const passed = report.filter((r) => r.status === "pass").length;
+      const failed = report.filter((r) => r.status === "fail").length;
+      return NextResponse.json({
+        summary: `${passed} passed, ${failed} failed, ${report.length} total`,
+        report,
+      });
+    }
+
+    // === GUEST ONE-OFF FLOW (non-registered) — self-contained branch ===
+    // Drives the guest state machine up to the photo step (photo upload needs
+    // real Meta media, so we assert the collected state instead of committing).
+    if (step === "guest-one-off") {
+      const phoneKey = TEST_GUEST_PHONE.replace(/\D/g, "");
+      // Clean slate.
+      await supabase.from("whatsapp_conversations").delete().eq("phone", phoneKey);
+      await supabase.from("whatsapp_rate_events").delete().eq("phone", phoneKey);
+      await supabase.from("guest_requests").delete().eq("phone", phoneKey);
+
+      async function readConvo() {
+        const { data } = await supabase
+          .from("whatsapp_conversations")
+          .select("flow, step, data")
+          .eq("phone", phoneKey)
+          .maybeSingle();
+        return data as { flow: string; step: string; data: Record<string, unknown> } | null;
+      }
+
+      // Future date >= the 2-day minimum, in DD/MM/YYYY.
+      const d = new Date();
+      d.setDate(d.getDate() + 5);
+      const dateStr = `${String(d.getDate()).padStart(2, "0")}/${String(
+        d.getMonth() + 1,
+      ).padStart(2, "0")}/${d.getFullYear()}`;
+
+      await simulateTextWebhook(baseUrl, TEST_GUEST_PHONE, "pickup");
+      let convo = await readConvo();
+      assert(
+        "guest-start",
+        convo?.flow === "guest_one_off" && convo?.step === "await_name",
+        convo,
+      );
+
+      await simulateTextWebhook(baseUrl, TEST_GUEST_PHONE, "Test Guest");
+      convo = await readConvo();
+      assert("guest-name", convo?.step === "await_org", convo?.step);
+
+      await simulateTextWebhook(baseUrl, TEST_GUEST_PHONE, "Test Guest Society");
+      convo = await readConvo();
+      assert("guest-org", convo?.step === "await_address", convo?.step);
+
+      await simulateTextWebhook(baseUrl, TEST_GUEST_PHONE, "1 Test Road, Bengaluru");
+      convo = await readConvo();
+      assert("guest-address", convo?.step === "await_location", convo?.step);
+
+      await simulateLocationWebhook(baseUrl, TEST_GUEST_PHONE, 12.9352, 77.6245);
+      convo = await readConvo();
+      assert("guest-location", convo?.step === "await_gst", convo?.step);
+
+      await simulateTextWebhook(baseUrl, TEST_GUEST_PHONE, "no");
+      convo = await readConvo();
+      assert("guest-gst-skip", convo?.step === "await_date", convo?.step);
+
+      await simulateTextWebhook(baseUrl, TEST_GUEST_PHONE, dateStr);
+      convo = await readConvo();
+      assert("guest-date", convo?.step === "await_slot", convo?.step);
+
+      await simulateButtonWebhook(baseUrl, TEST_GUEST_PHONE, "wa_slot:morning", "Morning");
+      convo = await readConvo();
+      assert(
+        "guest-slot-await-photos",
+        convo?.step === "await_photos" &&
+          convo?.data?.requesterName === "Test Guest" &&
+          convo?.data?.orgName === "Test Guest Society" &&
+          convo?.data?.lat === 12.9352 &&
+          convo?.data?.scheduledSlot === "morning",
+        convo?.data,
+      );
+
+      // Cleanup
+      await supabase.from("whatsapp_conversations").delete().eq("phone", phoneKey);
+      await supabase.from("whatsapp_rate_events").delete().eq("phone", phoneKey);
 
       const passed = report.filter((r) => r.status === "pass").length;
       const failed = report.filter((r) => r.status === "fail").length;

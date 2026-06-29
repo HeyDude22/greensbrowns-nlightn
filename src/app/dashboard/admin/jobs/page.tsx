@@ -245,7 +245,7 @@ export default function AdminJobsPage() {
     ] = await Promise.all([
       supabase
         .from("pickups")
-        .select("id, pickup_number, estimated_weight_kg, estimated_volume_m3, organizations(name, lat, lng)")
+        .select("id, pickup_number, estimated_weight_kg, estimated_volume_m3, is_one_off, pickup_lat, pickup_lng, organizations(name, lat, lng), guest_requests(org_name)")
         .eq("status", "verified")
         .lte("scheduled_date", scheduledDate),
       supabase
@@ -284,14 +284,17 @@ export default function AdminJobsPage() {
     const optimizerPickups: OptimizerPickup[] = (pickupData ?? []).map(
       (p: Record<string, unknown>) => {
         const org = p.organizations as Record<string, unknown> | null;
+        const guest = p.guest_requests as Record<string, unknown> | null;
         return {
           id: p.id as string,
           pickup_number: p.pickup_number as string,
-          org_name: (org?.name as string) ?? "",
+          org_name: p.is_one_off
+            ? (guest?.org_name as string) ?? "One-off pickup"
+            : (org?.name as string) ?? "",
           estimated_weight_kg: p.estimated_weight_kg as number | null,
           estimated_volume_m3: p.estimated_volume_m3 as number | null,
-          lat: (org?.lat as number) ?? null,
-          lng: (org?.lng as number) ?? null,
+          lat: (p.pickup_lat as number) ?? (org?.lat as number) ?? null,
+          lng: (p.pickup_lng as number) ?? (org?.lng as number) ?? null,
         };
       },
     );
@@ -1390,7 +1393,7 @@ function CreateJobDialog({
     // Only fetch verified pickups scheduled on or before the selected date (overdue + same day)
     const { data: allPending, error: pendingErr } = await supabase
       .from("pickups")
-      .select("id, pickup_number, organization_id, estimated_weight_kg, estimated_volume_m3, scheduled_date, scheduled_slot, organizations(name, address, org_type, lat, lng)")
+      .select("id, pickup_number, organization_id, estimated_weight_kg, estimated_volume_m3, scheduled_date, scheduled_slot, is_one_off, pickup_lat, pickup_lng, organizations(name, address, org_type, lat, lng), guest_requests(org_name, address)")
       .eq("status", "verified")
       .lte("scheduled_date", scheduledDate)
       .order("scheduled_date", { ascending: true });
@@ -1407,6 +1410,7 @@ function CreateJobDialog({
       .filter((p: Record<string, unknown>) => !nearbyIds.has(p.id as string))
       .map((p: Record<string, unknown>) => {
         const org = p.organizations as Record<string, unknown> | null;
+        const guest = p.guest_requests as Record<string, unknown> | null;
         return {
           id: p.id as string,
           pickup_number: p.pickup_number as string,
@@ -1415,11 +1419,15 @@ function CreateJobDialog({
           estimated_volume_m3: p.estimated_volume_m3 as number | null,
           scheduled_date: p.scheduled_date as string,
           scheduled_slot: (p.scheduled_slot as string) ?? null,
-          org_name: (org?.name as string) ?? "",
-          org_address: (org?.address as string) ?? "",
+          org_name: p.is_one_off
+            ? (guest?.org_name as string) ?? "One-off pickup"
+            : (org?.name as string) ?? "",
+          org_address: p.is_one_off
+            ? (guest?.address as string) ?? (org?.address as string) ?? ""
+            : (org?.address as string) ?? "",
           org_type: (org?.org_type as string) ?? "",
-          lat: (org?.lat as number) ?? null,
-          lng: (org?.lng as number) ?? null,
+          lat: (p.pickup_lat as number) ?? (org?.lat as number) ?? null,
+          lng: (p.pickup_lng as number) ?? (org?.lng as number) ?? null,
           distance_km: null,
           existing_jobs: [],
         };
