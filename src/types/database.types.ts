@@ -511,6 +511,7 @@ export type Database = {
       payments: {
         Row: {
           created_at: string
+          failure_reason: string | null
           id: string
           paid_at: string | null
           payment_link_url: string | null
@@ -519,11 +520,14 @@ export type Database = {
           provider: string | null
           quote_amount_rs: number | null
           quoted_at: string | null
+          razorpay_payment_id: string | null
+          razorpay_payment_link_id: string | null
           status: string
           updated_at: string
         }
         Insert: {
           created_at?: string
+          failure_reason?: string | null
           id?: string
           paid_at?: string | null
           payment_link_url?: string | null
@@ -532,11 +536,14 @@ export type Database = {
           provider?: string | null
           quote_amount_rs?: number | null
           quoted_at?: string | null
+          razorpay_payment_id?: string | null
+          razorpay_payment_link_id?: string | null
           status?: string
           updated_at?: string
         }
         Update: {
           created_at?: string
+          failure_reason?: string | null
           id?: string
           paid_at?: string | null
           payment_link_url?: string | null
@@ -545,6 +552,8 @@ export type Database = {
           provider?: string | null
           quote_amount_rs?: number | null
           quoted_at?: string | null
+          razorpay_payment_id?: string | null
+          razorpay_payment_link_id?: string | null
           status?: string
           updated_at?: string
         }

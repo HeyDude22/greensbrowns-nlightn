@@ -35,6 +35,7 @@ Template names must match `WA_TEMPLATE_NAMES` in `wa-templates.ts`. Button paylo
 | 21 | `bwg_account_suspended` | BWG | 3rd no-show — account suspended | None | *(wa-templates only)* |
 | 22 | `admin_bwg_no_show` | Admin | Collector reports BWG Unavailable (no-show) | None | *(wa-templates only)* |
 | 23 | `admin_driver_no_show` | Admin | Driver accepted but never arrived by slot deadline | None | *(wa-templates only)* |
+| 24 | `bwg_payment_link` | BWG (guest) | Admin sends/resends a one-off pickup quote | None | *(wa-templates only)* |
 
 **Not Meta templates:** Collector mid-flow buttons (Enroute → Arrived → Full/Partial → In Transit → Arrived) are **session interactive messages** sent via API within the 24h window. Prompt text: `COLLECTOR_ACTION_PROMPT` in `templates.ts`.
 
@@ -1004,6 +1005,42 @@ Sent to all admin profiles with a phone number.
 
 ---
 
+## 24. `bwg_payment_link` (BWG guest — one-off pickups)
+
+**When sent:** Admin reviews a one-off (guest) pickup request and taps **Send payment link** (or **Resend** after a failed/expired link). A Razorpay payment link is created and its short URL is sent to the requestor. The pickup stays `requested` until payment succeeds.
+
+**Buttons:** None (the URL is in the body; the guest taps it to open the hosted Razorpay page).
+
+**Body variables:** 3
+
+```
+GreensBrowns — your one-off pickup quote is ready.
+Pickup: {{1}}
+Amount payable: {{2}}
+
+Pay securely here: {{3}}
+
+Your pickup is confirmed automatically once payment is received.
+```
+
+| Var | Maps to |
+|-----|---------|
+| {{1}} | Pickup number |
+| {{2}} | Amount (e.g. ₹1,500) |
+| {{3}} | Razorpay payment link short URL |
+
+Sent to the guest's phone (resolved from `guest_requests.phone`). Reused for both first-send and resend.
+
+**Payment lifecycle (`payments.status`):** `awaiting_quote → quoted → paid | failed | refunded`.
+- **Send/Resend** (admin, `POST /api/admin/pickups/quote`): cancels any previous Razorpay link, creates a new one (unique `reference_id`), sets `payments.status='quoted'`, sends this template. Pickup stays `requested`.
+- **Paid** (`POST /api/webhooks/razorpay`, event `payment_link.paid`): guarded update `quoted → paid`, then pickup `requested → verified`. Idempotent (only a `quoted` row transitions).
+- **Failed / expired / cancelled** (webhook): `quoted → failed`; pickup untouched; admin can resend.
+- `refunded` is a reserved status value; the refund flow is not built yet.
+
+Razorpay webhook URL to register: `https://<domain>/api/webhooks/razorpay`. Env: `RAZORPAY_KEY_ID`, `RAZORPAY_KEY_SECRET`, `RAZORPAY_WEBHOOK_SECRET`.
+
+---
+
 ## Deprecated
 
 - **`farmer_waste_processed`** — removed. Do not create in new Meta account.
@@ -1012,7 +1049,7 @@ Sent to all admin profiles with a phone number.
 
 ## New Meta Business Suite setup checklist
 
-1. Create all **23** templates above with exact names and variable counts.
+1. Create all **24** templates above with exact names and variable counts.
 2. Add buttons only on: `bwg_pickup_requested`, `collector_job_assigned`, `collector_pickup_reminder_1h`, `farmer_delivery_confirm`. The 1h reminder has two buttons: Enroute and Breakdown.
 3. Set `META_WA_TEMPLATE_LANG` and WhatsApp API credentials in app environment.
 4. Deploy app code.

@@ -20,6 +20,7 @@ export const WA_TEMPLATE_NAMES = {
   farmerAutoAccepted: "farmer_auto_accepted",
   bwgPickupScheduled: "bwg_pickup_scheduled",
   bwgPickupRequested: "bwg_pickup_requested",
+  bwgPaymentLink: "bwg_payment_link",
   bwgPickupCancelled: "bwg_pickup_cancelled_",
   bwgPickupCollected: "bwg_pickup_collected",
   bwgPickupPartial: "bwg_pickup_partial",
@@ -145,6 +146,25 @@ export async function sendTemplateBwgPickupRequested(
       params.orgName,
       params.date,
       formatWaSlot(params.slot),
+    ],
+  );
+}
+
+export async function sendTemplateBwgPaymentLink(
+  phone: string,
+  params: {
+    pickupNumber: string;
+    amountRs: number;
+    shortUrl: string;
+  },
+): Promise<string | null> {
+  return sendWhatsAppTemplate(
+    phone,
+    WA_TEMPLATE_NAMES.bwgPaymentLink,
+    [
+      params.pickupNumber,
+      `₹${params.amountRs.toLocaleString("en-IN")}`,
+      params.shortUrl,
     ],
   );
 }

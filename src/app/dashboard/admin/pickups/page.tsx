@@ -34,7 +34,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { Truck, Eye, CheckCircle, ShieldCheck, Plus, Camera, ImagePlus, X, Sparkles, Loader2, CheckCheck, List, Map, HelpCircle, Lock, XCircle, UserPlus, Ban, MapPin } from "lucide-react";
+import { Truck, Eye, CheckCircle, ShieldCheck, Plus, Camera, ImagePlus, X, Sparkles, Loader2, CheckCheck, List, Map, HelpCircle, Lock, XCircle, UserPlus, Ban, MapPin, Banknote } from "lucide-react";
 import Link from "next/link";
 import type { PickupStatus, VehicleType } from "@/types";
 import { toast } from "sonner";
@@ -137,6 +137,10 @@ export default function AdminPickupsPage() {
   const [verifyWeight, setVerifyWeight] = useState("");
   const [verifyVolume, setVerifyVolume] = useState("");
   const [verifying, setVerifying] = useState(false);
+  const [quoteDialogOpen, setQuoteDialogOpen] = useState(false);
+  const [quotingPickup, setQuotingPickup] = useState<PickupWithOrg | null>(null);
+  const [quoteAmount, setQuoteAmount] = useState("");
+  const [sendingQuote, setSendingQuote] = useState(false);
 
   // Suggest jobs state
   const [viewMode, setViewMode] = useState<"list" | "suggest">("list");
@@ -358,6 +362,60 @@ export default function AdminPickupsPage() {
     toast.success("Pickup verified");
     setVerifying(false);
     setVerifyDialogOpen(false);
+  }
+
+  function openQuoteDialog(pickup: PickupWithOrg) {
+    const payment = Array.isArray(pickup.payments)
+      ? pickup.payments[0]
+      : pickup.payments;
+    setQuotingPickup(pickup);
+    setQuoteAmount(payment?.quote_amount_rs != null ? String(payment.quote_amount_rs) : "");
+    setQuoteDialogOpen(true);
+  }
+
+  async function handleSendPaymentLink() {
+    if (!quotingPickup) return;
+    const amount = Number(quoteAmount);
+    if (!Number.isFinite(amount) || amount <= 0) {
+      toast.error("Enter a valid amount");
+      return;
+    }
+    setSendingQuote(true);
+
+    try {
+      const res = await fetch("/api/admin/pickups/quote", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ pickupId: quotingPickup.id, quoteAmountRs: amount }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        toast.error(data.error || "Failed to send payment link");
+        setSendingQuote(false);
+        return;
+      }
+
+      setPickups((prev) =>
+        prev.map((p) =>
+          p.id === quotingPickup.id
+            ? {
+                ...p,
+                payments: {
+                  status: "quoted",
+                  quote_amount_rs: amount,
+                },
+              }
+            : p
+        )
+      );
+      toast.success("Payment link sent on WhatsApp");
+      setQuoteDialogOpen(false);
+    } catch (error) {
+      console.error(error);
+      toast.error("Failed to send payment link");
+    } finally {
+      setSendingQuote(false);
+    }
   }
 
   async function handleSuggestJobs() {
@@ -1190,28 +1248,35 @@ export default function AdminPickupsPage() {
                         </TableCell>
                         <TableCell>
                           <div className="flex items-center gap-1">
-                            {pickup.status === "requested" && (
-                              <>
-                                <Button
-                                  size="sm"
-                                  variant="outline"
-                                  onClick={() => openVerifyDialog(pickup)}
-                                  title="Verify and release to scheduling (payment flow not yet built)"
-                                >
-                                  <ShieldCheck className="mr-1 h-3 w-3" />
-                                  Verify (skip payment)
-                                </Button>
-                                <Button
-                                  size="sm"
-                                  variant="outline"
-                                  onClick={() => handleCancelPickup(pickup.id)}
-                                  disabled={cancellingPickupId === pickup.id}
-                                >
-                                  <XCircle className="mr-1 h-3 w-3" />
-                                  {cancellingPickupId === pickup.id ? "..." : "Cancel"}
-                                </Button>
-                              </>
-                            )}
+                            {pickup.status === "requested" && (() => {
+                              const payment = Array.isArray(pickup.payments)
+                                ? pickup.payments[0]
+                                : pickup.payments;
+                              const payStatus = payment?.status || "awaiting_quote";
+                              const isResend = payStatus === "quoted" || payStatus === "failed";
+                              return (
+                                <>
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    onClick={() => openQuoteDialog(pickup)}
+                                    title="Create a Razorpay payment link and send it to the requestor on WhatsApp"
+                                  >
+                                    <Banknote className="mr-1 h-3 w-3" />
+                                    {isResend ? "Resend link" : "Send payment link"}
+                                  </Button>
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    onClick={() => handleCancelPickup(pickup.id)}
+                                    disabled={cancellingPickupId === pickup.id}
+                                  >
+                                    <XCircle className="mr-1 h-3 w-3" />
+                                    {cancellingPickupId === pickup.id ? "..." : "Cancel"}
+                                  </Button>
+                                </>
+                              );
+                            })()}
                             {pickup.status === "in_transit" && (
                               <Button
                                 size="sm"
@@ -1520,6 +1585,52 @@ export default function AdminPickupsPage() {
             <Button onClick={handleVerify} disabled={verifying}>
               <ShieldCheck className="mr-2 h-4 w-4" />
               {verifying ? "Verifying..." : "Verify Pickup"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Send / Resend Payment Link Dialog (one-off pickups) */}
+      <Dialog open={quoteDialogOpen} onOpenChange={setQuoteDialogOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Send Payment Link</DialogTitle>
+            <DialogDescription>
+              Enter the quote for {quotingPickup?.pickup_number}. A Razorpay
+              payment link is created and sent to the requestor on WhatsApp. The
+              pickup is verified automatically once payment succeeds.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div className="text-sm text-muted-foreground">
+              Requestor:{" "}
+              <strong>
+                {quotingPickup?.guest_requests?.requester_name ?? "—"}
+              </strong>
+              {quotingPickup?.guest_requests?.phone && (
+                <> · {quotingPickup.guest_requests.phone}</>
+              )}
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="quoteAmount">Quote Amount (₹)</Label>
+              <Input
+                id="quoteAmount"
+                type="number"
+                min="1"
+                step="1"
+                value={quoteAmount}
+                onChange={(e) => setQuoteAmount(e.target.value)}
+                placeholder="Enter amount in rupees"
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setQuoteDialogOpen(false)}>
+              Cancel
+            </Button>
+            <Button onClick={handleSendPaymentLink} disabled={sendingQuote}>
+              <Banknote className="mr-2 h-4 w-4" />
+              {sendingQuote ? "Sending..." : "Send Link"}
             </Button>
           </DialogFooter>
         </DialogContent>
