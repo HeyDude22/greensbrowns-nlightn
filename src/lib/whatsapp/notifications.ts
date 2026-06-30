@@ -8,6 +8,7 @@ import {
   sendTemplateBwgPickupCollected,
   sendTemplateBwgPickupPartial,
   sendTemplateBwgPickupRequested,
+  sendTemplateBwgPaymentLink,
   sendTemplateBwgPickupScheduled,
   sendTemplateCollectorJobAssigned,
   sendTemplateCollectorPickupReminder,
@@ -300,6 +301,37 @@ export async function sendBwgPickupRequestedWhatsApp(pickupId: string) {
   });
   if (!messageId) {
     console.error("[BWG WhatsApp] pickup requested template failed", {
+      pickupId,
+      phone,
+    });
+  }
+}
+
+export async function sendBwgPaymentLinkWhatsApp(
+  pickupId: string,
+  params: { amountRs: number; shortUrl: string },
+) {
+  const { data: pickup } = await supabase
+    .from("pickups")
+    .select("id, pickup_number")
+    .eq("id", pickupId)
+    .single();
+
+  if (!pickup) return;
+
+  const phone = await resolveBwgPhone(pickupId);
+  if (!phone) {
+    console.warn(`[BWG WhatsApp] No phone for pickup ${pickupId} (payment link)`);
+    return;
+  }
+
+  const messageId = await sendTemplateBwgPaymentLink(phone, {
+    pickupNumber: pickup.pickup_number ?? pickupId,
+    amountRs: params.amountRs,
+    shortUrl: params.shortUrl,
+  });
+  if (!messageId) {
+    console.error("[BWG WhatsApp] payment link template failed", {
       pickupId,
       phone,
     });
