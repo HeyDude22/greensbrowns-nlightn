@@ -9,18 +9,86 @@ import crypto from "crypto";
  * Docs: https://razorpay.com/docs/api/payments/payment-links/
  */
 
-const KEY_ID = process.env.RAZORPAY_KEY_ID ?? "";
-const KEY_SECRET = process.env.RAZORPAY_KEY_SECRET ?? "";
-const WEBHOOK_SECRET = process.env.RAZORPAY_WEBHOOK_SECRET ?? "";
-
 const API_BASE = "https://api.razorpay.com/v1";
 
+/** Strip whitespace, wrapping quotes, and zero-width chars from pasted env values. */
+function sanitizeEnv(value: string): string {
+  let v = value.trim();
+  if (
+    (v.startsWith('"') && v.endsWith('"')) ||
+    (v.startsWith("'") && v.endsWith("'"))
+  ) {
+    v = v.slice(1, -1).trim();
+  }
+  return v.replace(/[\u200B-\u200D\uFEFF]/g, "");
+}
+
+/**
+ * Read credentials at call time. Bracket access avoids Next.js inlining empty
+ * values at build when vars were missing during `next build`.
+ */
+function getCredentials(): { keyId: string; keySecret: string; webhookSecret: string } {
+  return {
+    keyId: sanitizeEnv(process.env["RAZORPAY_KEY_ID"] ?? ""),
+    keySecret: sanitizeEnv(process.env["RAZORPAY_KEY_SECRET"] ?? ""),
+    webhookSecret: sanitizeEnv(process.env["RAZORPAY_WEBHOOK_SECRET"] ?? ""),
+  };
+}
+
 export function isRazorpayConfigured(): boolean {
-  return Boolean(KEY_ID && KEY_SECRET);
+  const { keyId, keySecret } = getCredentials();
+  return Boolean(keyId && keySecret);
+}
+
+/** Safe metadata for debugging 401s — never exposes secrets. */
+export function razorpayCredentialDiagnostics(): {
+  configured: boolean;
+  keyIdPrefix: string | null;
+  keyIdLooksValid: boolean;
+  secretLength: number;
+  likelySwapped: boolean;
+} {
+  const { keyId, keySecret } = getCredentials();
+  const keyIdLooksValid = /^rzp_(test|live)_[A-Za-z0-9]+$/.test(keyId);
+  const secretLooksLikeKeyId = /^rzp_(test|live)_/.test(keySecret);
+  return {
+    configured: Boolean(keyId && keySecret),
+    keyIdPrefix: keyId ? `${keyId.slice(0, 12)}…` : null,
+    keyIdLooksValid,
+    secretLength: keySecret.length,
+    likelySwapped: !keyIdLooksValid && secretLooksLikeKeyId,
+  };
 }
 
 function authHeader(): string {
-  return "Basic " + Buffer.from(`${KEY_ID}:${KEY_SECRET}`).toString("base64");
+  const { keyId, keySecret } = getCredentials();
+  return "Basic " + Buffer.from(`${keyId}:${keySecret}`).toString("base64");
+}
+
+/** Lightweight auth probe — lists 1 payment link (or empty list). */
+export async function probeRazorpayAuth(): Promise<{
+  ok: boolean;
+  status: number;
+  error?: string;
+}> {
+  if (!isRazorpayConfigured()) {
+    return { ok: false, status: 0, error: "not_configured" };
+  }
+
+  const res = await fetch(`${API_BASE}/payment_links?count=1`, {
+    headers: { Authorization: authHeader() },
+  });
+
+  if (res.ok) return { ok: true, status: res.status };
+
+  const data = (await res.json().catch(() => ({}))) as {
+    error?: { description?: string };
+  };
+  return {
+    ok: false,
+    status: res.status,
+    error: data.error?.description ?? `HTTP ${res.status}`,
+  };
 }
 
 export interface CreatePaymentLinkArgs {
@@ -87,9 +155,11 @@ export async function createPaymentLink(
 
   const data = (await res.json()) as Record<string, unknown>;
   if (!res.ok) {
-    throw new Error(
+    const err = new Error(
       `Razorpay createPaymentLink failed (${res.status}): ${JSON.stringify(data)}`,
-    );
+    ) as Error & { statusCode?: number };
+    err.statusCode = res.status;
+    throw err;
   }
 
   return {
@@ -134,14 +204,15 @@ export function verifyWebhookSignature(
   rawBody: string,
   signature: string | null,
 ): boolean {
-  if (!WEBHOOK_SECRET) {
+  const { webhookSecret } = getCredentials();
+  if (!webhookSecret) {
     console.error("[Razorpay] RAZORPAY_WEBHOOK_SECRET not configured — rejecting");
     return false;
   }
   if (!signature) return false;
 
   const expected = crypto
-    .createHmac("sha256", WEBHOOK_SECRET)
+    .createHmac("sha256", webhookSecret)
     .update(rawBody, "utf8")
     .digest("hex");
 
