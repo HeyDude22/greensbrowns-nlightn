@@ -5,6 +5,7 @@ import {
   createPaymentLink,
   cancelPaymentLink,
   isRazorpayConfigured,
+  razorpayCredentialDiagnostics,
 } from "@/lib/razorpay";
 import { sendBwgPaymentLinkWhatsApp } from "@/lib/whatsapp/notifications";
 
@@ -49,7 +50,7 @@ export async function POST(req: NextRequest) {
   const { data: pickup, error: pickupErr } = await admin
     .from("pickups")
     .select(
-      "id, pickup_number, status, is_one_off, guest_requests(requester_name, phone)",
+      "id, pickup_number, status, is_one_off, estimated_weight_kg, guest_requests(requester_name, phone)",
     )
     .eq("id", pickupId)
     .single();
@@ -67,6 +68,13 @@ export async function POST(req: NextRequest) {
     return NextResponse.json(
       { error: `Pickup is '${pickup.status}', not awaiting payment` },
       { status: 409 },
+    );
+  }
+
+  if (!pickup.estimated_weight_kg || pickup.estimated_weight_kg <= 0) {
+    return NextResponse.json(
+      { error: "Estimated weight must be verified before sending a payment link" },
+      { status: 400 },
     );
   }
 
@@ -121,7 +129,26 @@ export async function POST(req: NextRequest) {
       notes: { pickup_id: pickupId, payment_id: payment?.id ?? "" },
     });
   } catch (error) {
-    console.error("[quote] createPaymentLink failed", error);
+    const diag = razorpayCredentialDiagnostics();
+    console.error("[quote] createPaymentLink failed", error, diag);
+    const statusCode =
+      error && typeof error === "object" && "statusCode" in error
+        ? (error as { statusCode?: number }).statusCode
+        : undefined;
+    if (statusCode === 401) {
+      const hint = diag.likelySwapped
+        ? " It looks like KEY_ID and KEY_SECRET may be swapped in Vercel."
+        : !diag.keyIdLooksValid
+          ? " RAZORPAY_KEY_ID should start with rzp_test_ or rzp_live_."
+          : "";
+      return NextResponse.json(
+        {
+          error: `Razorpay authentication failed.${hint} Use matching Test or Live API keys from Razorpay → Settings → API Keys (not the webhook secret). Redeploy after updating env vars.`,
+          diagnostics: diag,
+        },
+        { status: 502 },
+      );
+    }
     return NextResponse.json(
       { error: "Failed to create payment link" },
       { status: 502 },

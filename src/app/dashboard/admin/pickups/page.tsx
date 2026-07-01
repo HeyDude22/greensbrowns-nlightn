@@ -34,7 +34,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { Truck, Eye, CheckCircle, ShieldCheck, Plus, Camera, ImagePlus, X, Sparkles, Loader2, CheckCheck, List, Map, HelpCircle, Lock, XCircle, UserPlus, Ban, MapPin, Banknote } from "lucide-react";
+import { Truck, Eye, CheckCircle, ShieldCheck, Plus, Camera, ImagePlus, X, Sparkles, Loader2, CheckCheck, List, HelpCircle, Lock, XCircle, UserPlus, Ban, Banknote } from "lucide-react";
 import Link from "next/link";
 import type { PickupStatus, VehicleType } from "@/types";
 import { toast } from "sonner";
@@ -133,12 +133,12 @@ export default function AdminPickupsPage() {
   const [markingProcessedId, setMarkingProcessedId] = useState<string | null>(null);
   const [cancellingPickupId, setCancellingPickupId] = useState<string | null>(null);
   const [verifyDialogOpen, setVerifyDialogOpen] = useState(false);
+  const [verifyDialogMode, setVerifyDialogMode] = useState<"registered" | "one_off">("registered");
+  const [oneOffDialogStep, setOneOffDialogStep] = useState<"verify" | "quote">("verify");
   const [verifyingPickup, setVerifyingPickup] = useState<PickupWithOrg | null>(null);
   const [verifyWeight, setVerifyWeight] = useState("");
   const [verifyVolume, setVerifyVolume] = useState("");
   const [verifying, setVerifying] = useState(false);
-  const [quoteDialogOpen, setQuoteDialogOpen] = useState(false);
-  const [quotingPickup, setQuotingPickup] = useState<PickupWithOrg | null>(null);
   const [quoteAmount, setQuoteAmount] = useState("");
   const [sendingQuote, setSendingQuote] = useState(false);
 
@@ -314,10 +314,84 @@ export default function AdminPickupsPage() {
   }
 
   function openVerifyDialog(pickup: PickupWithOrg) {
+    setVerifyDialogMode("registered");
+    setOneOffDialogStep("verify");
     setVerifyingPickup(pickup);
     setVerifyWeight(pickup.estimated_weight_kg?.toString() ?? "");
     setVerifyVolume(pickup.estimated_volume_m3?.toString() ?? "");
+    setQuoteAmount("");
     setVerifyDialogOpen(true);
+  }
+
+  function openOneOffFlow(pickup: PickupWithOrg, step: "verify" | "quote" = "verify") {
+    const payment = Array.isArray(pickup.payments)
+      ? pickup.payments[0]
+      : pickup.payments;
+    setVerifyDialogMode("one_off");
+    setOneOffDialogStep(step);
+    setVerifyingPickup(pickup);
+    setVerifyWeight(pickup.estimated_weight_kg?.toString() ?? "");
+    setVerifyVolume(pickup.estimated_volume_m3?.toString() ?? "");
+    setQuoteAmount(payment?.quote_amount_rs != null ? String(payment.quote_amount_rs) : "");
+    setVerifyDialogOpen(true);
+  }
+
+  function closeVerifyDialog() {
+    setVerifyDialogOpen(false);
+    setVerifyDialogMode("registered");
+    setOneOffDialogStep("verify");
+    setVerifyingPickup(null);
+    setQuoteAmount("");
+  }
+
+  async function handleVerifyOneOffWeight() {
+    if (!verifyingPickup) return;
+    const weight = verifyWeight ? Number(verifyWeight) : null;
+    const volume = verifyVolume ? Number(verifyVolume) : null;
+
+    if (!weight || weight <= 0) {
+      toast.error("Enter a valid estimated weight");
+      return;
+    }
+
+    setVerifying(true);
+
+    const { error } = await supabase
+      .from("pickups")
+      .update({
+        estimated_weight_kg: weight,
+        estimated_volume_m3: volume,
+      })
+      .eq("id", verifyingPickup.id);
+
+    if (error) {
+      toast.error("Failed to save weight");
+      setVerifying(false);
+      return;
+    }
+
+    const { data: { user } } = await supabase.auth.getUser();
+    if (user) {
+      await supabase.from("pickup_events").insert({
+        pickup_id: verifyingPickup.id,
+        status: "requested",
+        changed_by: user.id,
+        notes: `Weight verified by admin — ${weight} kg, ${volume ?? "N/A"} m³`,
+      });
+    }
+
+    setPickups((prev) =>
+      prev.map((p) =>
+        p.id === verifyingPickup.id
+          ? { ...p, estimated_weight_kg: weight, estimated_volume_m3: volume }
+          : p
+      )
+    );
+    setVerifyingPickup((prev) =>
+      prev ? { ...prev, estimated_weight_kg: weight, estimated_volume_m3: volume } : prev
+    );
+    setVerifying(false);
+    setOneOffDialogStep("quote");
   }
 
   async function handleVerify() {
@@ -361,20 +435,11 @@ export default function AdminPickupsPage() {
     );
     toast.success("Pickup verified");
     setVerifying(false);
-    setVerifyDialogOpen(false);
-  }
-
-  function openQuoteDialog(pickup: PickupWithOrg) {
-    const payment = Array.isArray(pickup.payments)
-      ? pickup.payments[0]
-      : pickup.payments;
-    setQuotingPickup(pickup);
-    setQuoteAmount(payment?.quote_amount_rs != null ? String(payment.quote_amount_rs) : "");
-    setQuoteDialogOpen(true);
+    closeVerifyDialog();
   }
 
   async function handleSendPaymentLink() {
-    if (!quotingPickup) return;
+    if (!verifyingPickup) return;
     const amount = Number(quoteAmount);
     if (!Number.isFinite(amount) || amount <= 0) {
       toast.error("Enter a valid amount");
@@ -386,7 +451,7 @@ export default function AdminPickupsPage() {
       const res = await fetch("/api/admin/pickups/quote", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ pickupId: quotingPickup.id, quoteAmountRs: amount }),
+        body: JSON.stringify({ pickupId: verifyingPickup.id, quoteAmountRs: amount }),
       });
       const data = await res.json();
       if (!res.ok) {
@@ -397,7 +462,7 @@ export default function AdminPickupsPage() {
 
       setPickups((prev) =>
         prev.map((p) =>
-          p.id === quotingPickup.id
+          p.id === verifyingPickup.id
             ? {
                 ...p,
                 payments: {
@@ -409,7 +474,7 @@ export default function AdminPickupsPage() {
         )
       );
       toast.success("Payment link sent on WhatsApp");
-      setQuoteDialogOpen(false);
+      closeVerifyDialog();
     } catch (error) {
       console.error(error);
       toast.error("Failed to send payment link");
@@ -1164,14 +1229,24 @@ export default function AdminPickupsPage() {
                       <TableHead>Requester</TableHead>
                       <TableHead>Organization</TableHead>
                       <TableHead>Date</TableHead>
-                      <TableHead>Location</TableHead>
-                      <TableHead>Payment</TableHead>
+                      <TableHead>Est. Weight</TableHead>
+                      <TableHead>Job</TableHead>
+                      <TableHead>Payment Status</TableHead>
                       <TableHead>Status</TableHead>
                       <TableHead>Action</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {oneOffPickups.map((pickup) => (
+                    {oneOffPickups.map((pickup) => {
+                      const jobNumbers = pickup.job_pickups
+                        ?.map((jp) => jp.jobs?.job_number)
+                        .filter(Boolean) as string[] | undefined;
+                      const payment = Array.isArray(pickup.payments)
+                        ? pickup.payments[0]
+                        : pickup.payments;
+                      const payStatus = payment?.status || "awaiting_quote";
+
+                      return (
                       <TableRow key={pickup.id}>
                         <TableCell className="font-medium">
                           {pickup.pickup_number}
@@ -1198,45 +1273,49 @@ export default function AdminPickupsPage() {
                         </TableCell>
                         <TableCell>
                           {formatDateDDMMYYYY(pickup.scheduled_date)}
-                          {pickup.scheduled_slot && (
-                            <span className="block text-xs text-muted-foreground capitalize">
-                              {pickup.scheduled_slot}
+                        </TableCell>
+                        <TableCell>
+                          {pickup.estimated_weight_kg ? (
+                            <span className="inline-flex items-center gap-1">
+                              {pickup.estimated_weight_kg} kg
+                              {pickup.status !== "requested" && (
+                                <span title="Weight locked after verification">
+                                  <Lock className="h-3 w-3 text-amber-600" />
+                                </span>
+                              )}
                             </span>
+                          ) : (
+                            "—"
                           )}
                         </TableCell>
                         <TableCell>
-                          {pickup.pickup_lat != null && pickup.pickup_lng != null ? (
-                            <a
-                              href={`https://maps.google.com/?q=${pickup.pickup_lat},${pickup.pickup_lng}`}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="inline-flex items-center gap-1 text-sm text-blue-600 hover:underline"
-                            >
-                              <MapPin className="h-3 w-3" /> Map
-                            </a>
+                          {jobNumbers && jobNumbers.length > 0 ? (
+                            <div className="flex flex-col gap-0.5">
+                              {jobNumbers.map((jn) => (
+                                <Link
+                                  key={jn}
+                                  href="/dashboard/admin/jobs"
+                                  className="text-sm text-blue-600 hover:underline"
+                                >
+                                  {jn}
+                                </Link>
+                              ))}
+                            </div>
                           ) : (
                             <span className="text-muted-foreground">—</span>
                           )}
                         </TableCell>
                         <TableCell>
-                          {(() => {
-                            const payment = Array.isArray(pickup.payments)
-                              ? pickup.payments[0]
-                              : pickup.payments;
-                            const status = payment?.status || "awaiting_quote";
-                            return (
-                              <div className="flex flex-col">
-                                <Badge variant="outline" className="capitalize">
-                                  {status.replace(/_/g, " ")}
-                                </Badge>
-                                {payment?.quote_amount_rs != null && (
-                                  <span className="text-xs text-muted-foreground mt-0.5">
-                                    ₹{payment.quote_amount_rs.toLocaleString("en-IN")}
-                                  </span>
-                                )}
-                              </div>
-                            );
-                          })()}
+                          <div className="flex flex-col">
+                            <Badge variant="outline" className="capitalize">
+                              {payStatus.replace(/_/g, " ")}
+                            </Badge>
+                            {payment?.quote_amount_rs != null && (
+                              <span className="text-xs text-muted-foreground mt-0.5">
+                                ₹{payment.quote_amount_rs.toLocaleString("en-IN")}
+                              </span>
+                            )}
+                          </div>
                         </TableCell>
                         <TableCell>
                           <Badge
@@ -1248,35 +1327,49 @@ export default function AdminPickupsPage() {
                         </TableCell>
                         <TableCell>
                           <div className="flex items-center gap-1">
-                            {pickup.status === "requested" && (() => {
-                              const payment = Array.isArray(pickup.payments)
-                                ? pickup.payments[0]
-                                : pickup.payments;
-                              const payStatus = payment?.status || "awaiting_quote";
-                              const isResend = payStatus === "quoted" || payStatus === "failed";
-                              return (
-                                <>
-                                  <Button
-                                    size="sm"
-                                    variant="outline"
-                                    onClick={() => openQuoteDialog(pickup)}
-                                    title="Create a Razorpay payment link and send it to the requestor on WhatsApp"
-                                  >
-                                    <Banknote className="mr-1 h-3 w-3" />
-                                    {isResend ? "Resend link" : "Send payment link"}
-                                  </Button>
-                                  <Button
-                                    size="sm"
-                                    variant="outline"
-                                    onClick={() => handleCancelPickup(pickup.id)}
-                                    disabled={cancellingPickupId === pickup.id}
-                                  >
-                                    <XCircle className="mr-1 h-3 w-3" />
-                                    {cancellingPickupId === pickup.id ? "..." : "Cancel"}
-                                  </Button>
-                                </>
-                              );
-                            })()}
+                            {pickup.status === "requested" && payStatus === "awaiting_quote" && (
+                              <>
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  onClick={() => openOneOffFlow(pickup, "verify")}
+                                >
+                                  <ShieldCheck className="mr-1 h-3 w-3" />
+                                  Verify
+                                </Button>
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  onClick={() => handleCancelPickup(pickup.id)}
+                                  disabled={cancellingPickupId === pickup.id}
+                                >
+                                  <XCircle className="mr-1 h-3 w-3" />
+                                  {cancellingPickupId === pickup.id ? "..." : "Cancel"}
+                                </Button>
+                              </>
+                            )}
+                            {pickup.status === "requested" &&
+                              (payStatus === "quoted" || payStatus === "failed") && (
+                              <>
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  onClick={() => openOneOffFlow(pickup, "quote")}
+                                >
+                                  <Banknote className="mr-1 h-3 w-3" />
+                                  Resend link
+                                </Button>
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  onClick={() => handleCancelPickup(pickup.id)}
+                                  disabled={cancellingPickupId === pickup.id}
+                                >
+                                  <XCircle className="mr-1 h-3 w-3" />
+                                  {cancellingPickupId === pickup.id ? "..." : "Cancel"}
+                                </Button>
+                              </>
+                            )}
                             {pickup.status === "in_transit" && (
                               <Button
                                 size="sm"
@@ -1307,7 +1400,8 @@ export default function AdminPickupsPage() {
                           </div>
                         </TableCell>
                       </TableRow>
-                    ))}
+                      );
+                    })}
                   </TableBody>
                 </Table>
               </CardContent>
@@ -1476,163 +1570,204 @@ export default function AdminPickupsPage() {
         </DialogContent>
       </Dialog>
 
-      {/* Verify Pickup Dialog */}
-      <Dialog open={verifyDialogOpen} onOpenChange={setVerifyDialogOpen}>
+      {/* Verify Pickup Dialog (registered + one-off quote flow) */}
+      <Dialog
+        open={verifyDialogOpen}
+        onOpenChange={(open) => {
+          if (!open) closeVerifyDialog();
+          else setVerifyDialogOpen(true);
+        }}
+      >
         <DialogContent className="max-w-lg">
-          <DialogHeader>
-            <DialogTitle>Verify Pickup</DialogTitle>
-            <DialogDescription>
-              Review and confirm the estimated weight and volume for {verifyingPickup?.pickup_number}.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4 py-2">
-            <div className="text-sm text-muted-foreground">
-              Organization: <strong>{verifyingPickup?.organizations?.name ?? "—"}</strong>
-            </div>
-            {(() => {
-              const wastePhotos = verifyingPickup?.waste_photo_urls?.filter(Boolean) ?? [];
-              const beforeUrl = verifyingPickup?.photo_before_url;
-              const afterUrl = verifyingPickup?.photo_after_url;
-              const hasAnyPhotos = wastePhotos.length > 0 || beforeUrl || afterUrl;
-              if (!hasAnyPhotos) {
-                return (
-                  <p className="text-sm text-muted-foreground italic">
-                    No waste photos uploaded for this pickup.
-                  </p>
-                );
-              }
-              return (
-                <div className="space-y-2">
-                  <Label>Photos</Label>
-                  <div className="flex gap-2 overflow-x-auto">
-                    {wastePhotos.map((url, i) => (
-                      <a key={`waste-${i}`} href={url} target="_blank" rel="noopener noreferrer">
-                        <img
-                          src={url}
-                          alt={`Waste photo ${i + 1}`}
-                          className="h-32 w-32 rounded-md border object-cover hover:opacity-80 transition-opacity"
-                        />
-                      </a>
-                    ))}
-                    {beforeUrl && (
-                      <a href={beforeUrl} target="_blank" rel="noopener noreferrer" className="relative">
-                        <img
-                          src={beforeUrl}
-                          alt="Before pickup"
-                          className="h-32 w-32 rounded-md border object-cover hover:opacity-80 transition-opacity"
-                        />
-                        <span className="absolute bottom-1 left-1 bg-black/60 text-white text-[10px] px-1 rounded">Before</span>
-                      </a>
-                    )}
-                    {afterUrl && (
-                      <a href={afterUrl} target="_blank" rel="noopener noreferrer" className="relative">
-                        <img
-                          src={afterUrl}
-                          alt="After pickup"
-                          className="h-32 w-32 rounded-md border object-cover hover:opacity-80 transition-opacity"
-                        />
-                        <span className="absolute bottom-1 left-1 bg-black/60 text-white text-[10px] px-1 rounded">After</span>
-                      </a>
-                    )}
-                  </div>
+          {verifyDialogMode === "one_off" && oneOffDialogStep === "quote" ? (
+            <>
+              <DialogHeader>
+                <DialogTitle>Send Payment Link</DialogTitle>
+                <DialogDescription>
+                  Enter the quote for {verifyingPickup?.pickup_number}. A Razorpay
+                  payment link is sent to the requestor on WhatsApp. The pickup is
+                  verified automatically once payment succeeds.
+                </DialogDescription>
+              </DialogHeader>
+              <div className="space-y-4 py-2">
+                <div className="text-sm text-muted-foreground">
+                  Requestor:{" "}
+                  <strong>
+                    {verifyingPickup?.guest_requests?.requester_name ?? "—"}
+                  </strong>
+                  {verifyingPickup?.guest_requests?.phone && (
+                    <> · {verifyingPickup.guest_requests.phone}</>
+                  )}
                 </div>
-              );
-            })()}
-            <div className="space-y-2">
-              <Label htmlFor="verifyWeight">Estimated Weight (kg)</Label>
-              <Input
-                id="verifyWeight"
-                type="number"
-                min="0"
-                value={verifyWeight}
-                onChange={(e) => {
-                  const w = e.target.value;
-                  setVerifyWeight(w);
-                  if (w) {
-                    setVerifyVolume(
-                      (Number(w) / GREEN_WASTE_DENSITY_KG_PER_M3).toFixed(2)
+                {verifyingPickup?.estimated_weight_kg && (
+                  <div className="text-sm text-muted-foreground">
+                    Estimated weight:{" "}
+                    <strong>{verifyingPickup.estimated_weight_kg} kg</strong>
+                  </div>
+                )}
+                <div className="space-y-2">
+                  <Label htmlFor="quoteAmount">Quote Amount (₹)</Label>
+                  <Input
+                    id="quoteAmount"
+                    type="number"
+                    min="1"
+                    step="1"
+                    value={quoteAmount}
+                    onChange={(e) => setQuoteAmount(e.target.value)}
+                    placeholder="Enter amount in rupees"
+                  />
+                </div>
+              </div>
+              <DialogFooter>
+                <Button
+                  variant="outline"
+                  onClick={() => setOneOffDialogStep("verify")}
+                  disabled={sendingQuote}
+                >
+                  Back
+                </Button>
+                <Button onClick={handleSendPaymentLink} disabled={sendingQuote}>
+                  <Banknote className="mr-2 h-4 w-4" />
+                  {sendingQuote ? "Sending..." : "Send Link"}
+                </Button>
+              </DialogFooter>
+            </>
+          ) : (
+            <>
+              <DialogHeader>
+                <DialogTitle>Verify Pickup</DialogTitle>
+                <DialogDescription>
+                  Review and confirm the estimated weight and volume for{" "}
+                  {verifyingPickup?.pickup_number}.
+                  {verifyDialogMode === "one_off" &&
+                    " After verification you can enter the quote and send a payment link."}
+                </DialogDescription>
+              </DialogHeader>
+              <div className="space-y-4 py-2">
+                <div className="text-sm text-muted-foreground">
+                  {verifyDialogMode === "one_off" ? (
+                    <>
+                      Organization:{" "}
+                      <strong>{verifyingPickup?.guest_requests?.org_name ?? "—"}</strong>
+                    </>
+                  ) : (
+                    <>
+                      Organization:{" "}
+                      <strong>{verifyingPickup?.organizations?.name ?? "—"}</strong>
+                    </>
+                  )}
+                </div>
+                {(() => {
+                  const wastePhotos = verifyingPickup?.waste_photo_urls?.filter(Boolean) ?? [];
+                  const beforeUrl = verifyingPickup?.photo_before_url;
+                  const afterUrl = verifyingPickup?.photo_after_url;
+                  const hasAnyPhotos = wastePhotos.length > 0 || beforeUrl || afterUrl;
+                  if (!hasAnyPhotos) {
+                    return (
+                      <p className="text-sm text-muted-foreground italic">
+                        No waste photos uploaded for this pickup.
+                      </p>
                     );
                   }
-                }}
-                placeholder="Enter weight in kg"
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="verifyVolume">Estimated Volume (m³)</Label>
-              <Input
-                id="verifyVolume"
-                type="number"
-                min="0"
-                step="0.1"
-                value={verifyVolume}
-                onChange={(e) => {
-                  const v = e.target.value;
-                  setVerifyVolume(v);
-                  if (v) {
-                    setVerifyWeight(
-                      Math.round(Number(v) * GREEN_WASTE_DENSITY_KG_PER_M3).toString()
-                    );
+                  return (
+                    <div className="space-y-2">
+                      <Label>Photos</Label>
+                      <div className="flex gap-2 overflow-x-auto">
+                        {wastePhotos.map((url, i) => (
+                          <a key={`waste-${i}`} href={url} target="_blank" rel="noopener noreferrer">
+                            <img
+                              src={url}
+                              alt={`Waste photo ${i + 1}`}
+                              className="h-32 w-32 rounded-md border object-cover hover:opacity-80 transition-opacity"
+                            />
+                          </a>
+                        ))}
+                        {beforeUrl && (
+                          <a href={beforeUrl} target="_blank" rel="noopener noreferrer" className="relative">
+                            <img
+                              src={beforeUrl}
+                              alt="Before pickup"
+                              className="h-32 w-32 rounded-md border object-cover hover:opacity-80 transition-opacity"
+                            />
+                            <span className="absolute bottom-1 left-1 bg-black/60 text-white text-[10px] px-1 rounded">Before</span>
+                          </a>
+                        )}
+                        {afterUrl && (
+                          <a href={afterUrl} target="_blank" rel="noopener noreferrer" className="relative">
+                            <img
+                              src={afterUrl}
+                              alt="After pickup"
+                              className="h-32 w-32 rounded-md border object-cover hover:opacity-80 transition-opacity"
+                            />
+                            <span className="absolute bottom-1 left-1 bg-black/60 text-white text-[10px] px-1 rounded">After</span>
+                          </a>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })()}
+                <div className="space-y-2">
+                  <Label htmlFor="verifyWeight">Estimated Weight (kg)</Label>
+                  <Input
+                    id="verifyWeight"
+                    type="number"
+                    min="0"
+                    value={verifyWeight}
+                    onChange={(e) => {
+                      const w = e.target.value;
+                      setVerifyWeight(w);
+                      if (w) {
+                        setVerifyVolume(
+                          (Number(w) / GREEN_WASTE_DENSITY_KG_PER_M3).toFixed(2)
+                        );
+                      }
+                    }}
+                    placeholder="Enter weight in kg"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="verifyVolume">Estimated Volume (m³)</Label>
+                  <Input
+                    id="verifyVolume"
+                    type="number"
+                    min="0"
+                    step="0.1"
+                    value={verifyVolume}
+                    onChange={(e) => {
+                      const v = e.target.value;
+                      setVerifyVolume(v);
+                      if (v) {
+                        setVerifyWeight(
+                          Math.round(Number(v) * GREEN_WASTE_DENSITY_KG_PER_M3).toString()
+                        );
+                      }
+                    }}
+                    placeholder="Enter volume in m³"
+                  />
+                </div>
+              </div>
+              <DialogFooter>
+                <Button variant="outline" onClick={closeVerifyDialog}>
+                  Cancel
+                </Button>
+                <Button
+                  onClick={
+                    verifyDialogMode === "one_off"
+                      ? handleVerifyOneOffWeight
+                      : handleVerify
                   }
-                }}
-                placeholder="Enter volume in m³"
-              />
-            </div>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setVerifyDialogOpen(false)}>
-              Cancel
-            </Button>
-            <Button onClick={handleVerify} disabled={verifying}>
-              <ShieldCheck className="mr-2 h-4 w-4" />
-              {verifying ? "Verifying..." : "Verify Pickup"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* Send / Resend Payment Link Dialog (one-off pickups) */}
-      <Dialog open={quoteDialogOpen} onOpenChange={setQuoteDialogOpen}>
-        <DialogContent className="max-w-md">
-          <DialogHeader>
-            <DialogTitle>Send Payment Link</DialogTitle>
-            <DialogDescription>
-              Enter the quote for {quotingPickup?.pickup_number}. A Razorpay
-              payment link is created and sent to the requestor on WhatsApp. The
-              pickup is verified automatically once payment succeeds.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4 py-2">
-            <div className="text-sm text-muted-foreground">
-              Requestor:{" "}
-              <strong>
-                {quotingPickup?.guest_requests?.requester_name ?? "—"}
-              </strong>
-              {quotingPickup?.guest_requests?.phone && (
-                <> · {quotingPickup.guest_requests.phone}</>
-              )}
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="quoteAmount">Quote Amount (₹)</Label>
-              <Input
-                id="quoteAmount"
-                type="number"
-                min="1"
-                step="1"
-                value={quoteAmount}
-                onChange={(e) => setQuoteAmount(e.target.value)}
-                placeholder="Enter amount in rupees"
-              />
-            </div>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setQuoteDialogOpen(false)}>
-              Cancel
-            </Button>
-            <Button onClick={handleSendPaymentLink} disabled={sendingQuote}>
-              <Banknote className="mr-2 h-4 w-4" />
-              {sendingQuote ? "Sending..." : "Send Link"}
-            </Button>
-          </DialogFooter>
+                  disabled={verifying}
+                >
+                  <ShieldCheck className="mr-2 h-4 w-4" />
+                  {verifying
+                    ? "Verifying..."
+                    : verifyDialogMode === "one_off"
+                      ? "Continue to Quote"
+                      : "Verify Pickup"}
+                </Button>
+              </DialogFooter>
+            </>
+          )}
         </DialogContent>
       </Dialog>
     </div>
