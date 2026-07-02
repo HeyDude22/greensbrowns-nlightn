@@ -1,4 +1,4 @@
-export type UserRole = "bwg" | "collector" | "farmer" | "admin";
+export type UserRole = "bwg" | "collector" | "farmer" | "admin" | "owner";
 
 export type KycStatus = "pending" | "submitted" | "verified" | "rejected";
 
