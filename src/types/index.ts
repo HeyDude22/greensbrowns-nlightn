@@ -103,6 +103,7 @@ export interface PickupEvent {
 export interface Vehicle {
   id: string;
   created_by: string | null;
+  owner_id: string | null;
   registration_number: string;
   vehicle_type: import("./enums").VehicleType;
   capacity_kg: number;

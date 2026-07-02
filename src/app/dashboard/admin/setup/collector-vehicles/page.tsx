@@ -5,13 +5,14 @@ import { createClient } from "@/lib/supabase/client";
 import { PageHeader } from "@/components/shared/page-header";
 import { DashboardSkeleton } from "@/components/shared/loading-skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Truck, UserCheck, IndianRupee } from "lucide-react";
+import { Truck, UserCheck, IndianRupee, Crown } from "lucide-react";
 import { toast } from "sonner";
 import type { Vehicle, VehicleDocument, Driver, VehicleTypeRate } from "@/types";
 
 import { VehiclesTab } from "./_vehicles-tab";
 import { DriversTab } from "./_drivers-tab";
 import { RatesTab } from "./_rates-tab";
+import { OwnersTab } from "./_owners-tab";
 
 interface VehicleWithDetails extends Vehicle {
   vehicle_documents?: VehicleDocument[];
@@ -27,6 +28,7 @@ export default function AdminCollectorVehiclesPage() {
   const [vehicles, setVehicles] = useState<VehicleWithDetails[]>([]);
   const [drivers, setDrivers] = useState<DriverWithVehicles[]>([]);
   const [rates, setRates] = useState<VehicleTypeRate[]>([]);
+  const [owners, setOwners] = useState<{ id: string; full_name: string | null; email: string | null; phone: string | null }[]>([]);
   const [loading, setLoading] = useState(true);
 
   const fetchVehicles = useCallback(async () => {
@@ -68,8 +70,22 @@ export default function AdminCollectorVehiclesPage() {
     if (data) setRates(data as unknown as VehicleTypeRate[]);
   }, [supabase]);
 
+  const fetchOwners = useCallback(async () => {
+    const { data, error } = await supabase
+      .from("profiles")
+      .select("id, full_name, email, phone")
+      .eq("role", "owner")
+      .order("full_name");
+
+    if (error) {
+      toast.error("Failed to load owners");
+      console.error(error);
+    }
+    if (data) setOwners(data);
+  }, [supabase]);
+
   useEffect(() => {
-    Promise.all([fetchVehicles(), fetchDrivers(), fetchRates()]).then(() =>
+    Promise.all([fetchVehicles(), fetchDrivers(), fetchRates(), fetchOwners()]).then(() =>
       setLoading(false)
     );
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
@@ -94,6 +110,9 @@ export default function AdminCollectorVehiclesPage() {
           <TabsTrigger value="rates">
             <IndianRupee className="mr-2 h-4 w-4" /> Rates
           </TabsTrigger>
+          <TabsTrigger value="owners">
+            <Crown className="mr-2 h-4 w-4" /> Owners
+          </TabsTrigger>
         </TabsList>
 
         <TabsContent value="vehicles" className="mt-4">
@@ -111,6 +130,15 @@ export default function AdminCollectorVehiclesPage() {
 
         <TabsContent value="rates" className="mt-4">
           <RatesTab rates={rates} fetchRates={fetchRates} />
+        </TabsContent>
+
+        <TabsContent value="owners" className="mt-4">
+          <OwnersTab
+            owners={owners}
+            vehicles={vehicles}
+            fetchOwners={fetchOwners}
+            fetchVehicles={fetchVehicles}
+          />
         </TabsContent>
       </Tabs>
     </div>
