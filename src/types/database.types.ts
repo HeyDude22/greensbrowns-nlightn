@@ -1077,9 +1077,11 @@ export type Database = {
           created_by: string | null
           id: string
           is_active: boolean
+          owner_id: string | null
           registration_number: string
           updated_at: string
           vehicle_type: Database["public"]["Enums"]["vehicle_type"]
+          volume_capacity_m3: number | null
         }
         Insert: {
           capacity_kg?: number
@@ -1087,9 +1089,11 @@ export type Database = {
           created_by?: string | null
           id?: string
           is_active?: boolean
+          owner_id?: string | null
           registration_number: string
           updated_at?: string
           vehicle_type: Database["public"]["Enums"]["vehicle_type"]
+          volume_capacity_m3?: number | null
         }
         Update: {
           capacity_kg?: number
@@ -1097,14 +1101,23 @@ export type Database = {
           created_by?: string | null
           id?: string
           is_active?: boolean
+          owner_id?: string | null
           registration_number?: string
           updated_at?: string
           vehicle_type?: Database["public"]["Enums"]["vehicle_type"]
+          volume_capacity_m3?: number | null
         }
         Relationships: [
           {
             foreignKeyName: "vehicles_created_by_fkey"
             columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "vehicles_owner_id_fkey"
+            columns: ["owner_id"]
             isOneToOne: false
             referencedRelation: "profiles"
             referencedColumns: ["id"]
@@ -1200,7 +1213,7 @@ export type Database = {
       recurrence_type: "one_time" | "weekly" | "biweekly" | "monthly"
       ticket_status: "open" | "in_progress" | "resolved" | "closed"
       trip_status: "in_transit" | "delivered"
-      user_role: "bwg" | "collector" | "farmer" | "admin"
+      user_role: "bwg" | "collector" | "farmer" | "admin" | "owner"
       vehicle_doc_type:
         | "rc"
         | "insurance"
@@ -1390,7 +1403,7 @@ export const Constants = {
       recurrence_type: ["one_time", "weekly", "biweekly", "monthly"],
       ticket_status: ["open", "in_progress", "resolved", "closed"],
       trip_status: ["in_transit", "delivered"],
-      user_role: ["bwg", "collector", "farmer", "admin"],
+      user_role: ["bwg", "collector", "farmer", "admin", "owner"],
       vehicle_doc_type: [
         "rc",
         "insurance",
