@@ -2,13 +2,14 @@
 
 import { ROLES } from "@/lib/constants";
 import type { UserRole } from "@/types/enums";
-import { Building2, Truck, Leaf, ShieldCheck } from "lucide-react";
+import { Building2, Truck, Leaf, ShieldCheck, Crown } from "lucide-react";
 
 const ROLE_ICONS: Record<UserRole, React.ElementType> = {
   bwg: Building2,
   collector: Truck,
   farmer: Leaf,
   admin: ShieldCheck,
+  owner: Crown,
 };
 
 interface RoleSelectorProps {
