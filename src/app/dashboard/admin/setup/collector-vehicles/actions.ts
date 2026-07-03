@@ -290,3 +290,96 @@ export async function updateDriver(driverId: string, data: DriverFormData) {
 
   return { success: true, userId: driverId };
 }
+
+// ── Owner CRUD ────────────────────────────────────────────────────────────────
+
+export interface OwnerFormData {
+  full_name: string;
+  email: string;
+  phone: string;
+}
+
+export async function createOwner(data: OwnerFormData) {
+  const result = await verifyAdmin();
+  if (result.error) return { error: result.error };
+  const admin = result.admin!;
+
+  const fullName = data.full_name.trim();
+  const email = data.email.trim().toLowerCase();
+  const phone = data.phone.trim();
+
+  if (fullName.length < 2) return { error: "Name must be at least 2 characters" };
+  if (!email.includes("@")) return { error: "Enter a valid email address" };
+
+  const { data: authData, error: authError } = await admin.auth.admin.createUser({
+    email,
+    password: crypto.randomUUID() + crypto.randomUUID(),
+    email_confirm: true,
+    user_metadata: { full_name: fullName, phone, role: "owner" },
+  });
+
+  if (authError) return { error: authError.message };
+
+  const userId = authData.user.id;
+
+  const { error: profileError } = await admin.from("profiles").upsert({
+    id: userId,
+    email,
+    full_name: fullName,
+    phone,
+    role: "owner",
+    kyc_status: "verified",
+  });
+
+  if (profileError) {
+    await admin.auth.admin.deleteUser(userId);
+    return { error: profileError.message };
+  }
+
+  return { success: true, userId };
+}
+
+export async function updateOwner(
+  ownerId: string,
+  data: Pick<OwnerFormData, "full_name" | "phone">
+) {
+  const result = await verifyAdmin();
+  if (result.error) return { error: result.error };
+  const admin = result.admin!;
+
+  const fullName = data.full_name.trim();
+  const phone = data.phone.trim();
+
+  if (fullName.length < 2) return { error: "Name must be at least 2 characters" };
+
+  const { error } = await admin
+    .from("profiles")
+    .update({ full_name: fullName, phone })
+    .eq("id", ownerId);
+
+  if (error) return { error: error.message };
+
+  await admin.auth.admin.updateUserById(ownerId, {
+    user_metadata: { full_name: fullName, phone },
+  });
+
+  return { success: true };
+}
+
+export async function deleteOwner(ownerId: string) {
+  const result = await verifyAdmin();
+  if (result.error) return { error: result.error };
+  const admin = result.admin!;
+
+  // Unassign all vehicles first
+  await admin
+    .from("vehicles")
+    .update({ owner_id: null })
+    .eq("owner_id", ownerId);
+
+  // Delete auth user (cascades to profile via trigger)
+  const { error } = await admin.auth.admin.deleteUser(ownerId);
+  if (error) return { error: error.message };
+
+  return { success: true };
+}
