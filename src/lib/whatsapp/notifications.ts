@@ -9,6 +9,7 @@ import {
   sendTemplateBwgPickupPartial,
   sendTemplateBwgPickupRequested,
   sendTemplateBwgPaymentLink,
+  sendTemplateBwgQuoteReady,
   sendTemplateBwgPickupScheduled,
   sendTemplateCollectorJobAssigned,
   sendTemplateCollectorPickupFirstReminder,
@@ -460,6 +461,37 @@ export async function sendBwgPaymentLinkWhatsApp(
       phone,
     });
   }
+}
+
+/** Sends the one-off quote (Accept Quote / Reject Quote). Returns the message id, or null. */
+export async function sendBwgQuoteReadyWhatsApp(
+  pickupId: string,
+  amountRs: number,
+): Promise<string | null> {
+  const { data: pickup } = await supabase
+    .from("pickups")
+    .select("id, pickup_number, scheduled_date, scheduled_slot")
+    .eq("id", pickupId)
+    .single();
+
+  if (!pickup) return null;
+
+  const phone = await resolveBwgPhone(pickupId);
+  if (!phone) {
+    console.warn(`[BWG WhatsApp] No phone for pickup ${pickupId} (quote)`);
+    return null;
+  }
+
+  const messageId = await sendTemplateBwgQuoteReady(phone, {
+    pickupNumber: pickup.pickup_number ?? pickupId,
+    date: formatDateDDMMYYYY(pickup.scheduled_date),
+    slot: pickup.scheduled_slot,
+    amountRs,
+  });
+  if (!messageId) {
+    console.error("[BWG WhatsApp] quote template failed", { pickupId, phone });
+  }
+  return messageId;
 }
 
 export async function sendBwgPickupCancelledWhatsApp(pickupId: string) {

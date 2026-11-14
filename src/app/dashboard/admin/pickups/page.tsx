@@ -525,7 +525,7 @@ export default function AdminPickupsPage() {
       });
       const data = await res.json();
       if (!res.ok) {
-        toast.error(data.error || "Failed to send payment link");
+        toast.error(data.error || "Failed to send quote");
         setSendingQuote(false);
         return;
       }
@@ -537,18 +537,18 @@ export default function AdminPickupsPage() {
                 ...p,
                 farmer_id: quoteProcessorId,
                 payments: {
-                  status: "quoted",
+                  status: "quote_sent",
                   quote_amount_rs: amount,
                 },
               }
             : p
         )
       );
-      toast.success("Payment link sent on WhatsApp");
+      toast.success("Quote sent on WhatsApp — waiting for the guest to accept");
       closeVerifyDialog();
     } catch (error) {
       console.error(error);
-      toast.error("Failed to send payment link");
+      toast.error("Failed to send quote");
     } finally {
       setSendingQuote(false);
     }
@@ -1420,7 +1420,7 @@ export default function AdminPickupsPage() {
                               </>
                             )}
                             {pickup.status === "requested" &&
-                              (payStatus === "quoted" || payStatus === "failed") && (
+                              (payStatus === "quote_sent" || payStatus === "quoted" || payStatus === "failed") && (
                               <>
                                 <Button
                                   size="sm"
@@ -1428,7 +1428,7 @@ export default function AdminPickupsPage() {
                                   onClick={() => openOneOffFlow(pickup, "quote")}
                                 >
                                   <Banknote className="mr-1 h-3 w-3" />
-                                  Resend link
+                                  Resend quote
                                 </Button>
                                 <Button
                                   size="sm"
@@ -1653,11 +1653,12 @@ export default function AdminPickupsPage() {
           {verifyDialogMode === "one_off" && oneOffDialogStep === "quote" ? (
             <>
               <DialogHeader>
-                <DialogTitle>Send Payment Link</DialogTitle>
+                <DialogTitle>Send Quote</DialogTitle>
                 <DialogDescription>
-                  Enter the quote for {verifyingPickup?.pickup_number}. A Razorpay
-                  payment link is sent to the requestor on WhatsApp. The pickup is
-                  verified automatically once payment succeeds.
+                  Choose the processor and amount for {verifyingPickup?.pickup_number}.
+                  The guest gets the quote on WhatsApp with Accept Quote and Reject
+                  Quote. Accepting sends a payment link valid for 24 hours; rejecting
+                  cancels the pickup. The pickup is verified once payment succeeds.
                 </DialogDescription>
               </DialogHeader>
               <div className="space-y-4 py-2">
@@ -1770,7 +1771,7 @@ export default function AdminPickupsPage() {
                 </Button>
                 <Button onClick={handleSendPaymentLink} disabled={sendingQuote}>
                   <Banknote className="mr-2 h-4 w-4" />
-                  {sendingQuote ? "Sending..." : "Send Link"}
+                  {sendingQuote ? "Sending..." : "Send Quote"}
                 </Button>
               </DialogFooter>
             </>
@@ -1782,7 +1783,7 @@ export default function AdminPickupsPage() {
                   Review and confirm the estimated weight and volume for{" "}
                   {verifyingPickup?.pickup_number}.
                   {verifyDialogMode === "one_off" &&
-                    " After verification you can enter the quote and send a payment link."}
+                    " After verification you can choose the processor and send the quote."}
                 </DialogDescription>
               </DialogHeader>
               <div className="space-y-4 py-2">

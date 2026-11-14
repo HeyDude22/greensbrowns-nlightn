@@ -21,6 +21,7 @@ export const WA_TEMPLATE_NAMES = {
   bwgPickupScheduled: "bwg_pickup_scheduled",
   bwgPickupRequested: "bwg_pickup_requested",
   bwgPaymentLink: "bwg_payment_link",
+  bwgQuoteReady: "bwg_quote_ready",
   bwgPickupCancelled: "bwg_pickup_cancelled_",
   bwgPickupCollected: "bwg_pickup_collected",
   bwgPickupPartial: "bwg_pickup_partial",
@@ -165,6 +166,28 @@ export async function sendTemplateBwgPaymentLink(
       params.pickupNumber,
       `₹${params.amountRs.toLocaleString("en-IN")}`,
       params.shortUrl,
+    ],
+  );
+}
+
+/** One-off quote with Accept Quote / Reject Quote buttons (no payment link yet). */
+export async function sendTemplateBwgQuoteReady(
+  phone: string,
+  params: {
+    pickupNumber: string;
+    date: string;
+    slot: string | null;
+    amountRs: number;
+  },
+): Promise<string | null> {
+  return sendWhatsAppTemplate(
+    phone,
+    WA_TEMPLATE_NAMES.bwgQuoteReady,
+    [
+      params.pickupNumber,
+      params.date,
+      formatWaSlot(params.slot),
+      `₹${params.amountRs.toLocaleString("en-IN")}`,
     ],
   );
 }
@@ -510,6 +533,10 @@ export function normalizeBwgWhatsAppChoice(raw: string): string {
   const textMap: Record<string, string> = {
     cancel: "cancel_pickup",
     cancel_pickup: "cancel_pickup",
+    "accept quote": "accept_quote",
+    accept_quote: "accept_quote",
+    "reject quote": "reject_quote",
+    reject_quote: "reject_quote",
   };
   return textMap[c] ?? c.replace(/\s+/g, "_");
 }

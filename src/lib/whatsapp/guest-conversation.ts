@@ -22,6 +22,7 @@ import {
 import { BWG_SLOT_BUTTONS, type WhatsAppHandlerReply } from "./types";
 import { createGuestPickup } from "./guest-pickup";
 import { sendBwgPickupCancelledWhatsApp } from "./notifications";
+import { acceptQuoteAndSendPaymentLink } from "@/lib/one-off-payment-link";
 
 const SYSTEM_GUEST_PROFILE_ID = process.env.SYSTEM_GUEST_PROFILE_ID ?? "";
 
@@ -561,6 +562,96 @@ export async function handleGuestCancel(
     status: "cancelled",
     changed_by: SYSTEM_GUEST_PROFILE_ID || null,
     notes: "One-off pickup cancelled by guest via WhatsApp",
+  });
+
+  // Confirmation is the approved bwg_pickup_cancelled template.
+  await sendBwgPickupCancelledWhatsApp(pickup.id);
+  return { kind: "none" };
+}
+
+/**
+ * Guest taps Accept Quote or Reject Quote on the bwg_quote_ready template
+ * (UAT-5). Acts on the guest's latest one-off pickup whose quote is waiting
+ * for an answer; a stale or repeated tap changes nothing.
+ */
+export async function handleGuestQuoteResponse(
+  phone: string,
+  choice: "accept_quote" | "reject_quote",
+): Promise<WhatsAppHandlerReply> {
+  const supabase = createAdminClient();
+  const normalizedPhone = phone.replace(/\D/g, "");
+
+  const { data: guest } = await supabase
+    .from("guest_requests")
+    .select("id")
+    .eq("phone", normalizedPhone)
+    .maybeSingle();
+  if (!guest) {
+    return text("No one-off pickup request was found for this number.");
+  }
+
+  const { data: pickups } = await supabase
+    .from("pickups")
+    .select("id, pickup_number, created_at, payments(status)")
+    .eq("is_one_off", true)
+    .eq("guest_request_id", guest.id)
+    .eq("status", "requested")
+    .order("created_at", { ascending: false })
+    .limit(10);
+
+  const pickup = (pickups ?? []).find((p) => {
+    const raw = p.payments as unknown as { status: string } | { status: string }[] | null;
+    const payment = Array.isArray(raw) ? raw[0] : raw;
+    return payment?.status === "quote_sent";
+  });
+
+  if (!pickup) {
+    return text(
+      "This quote has already been answered or replaced. If you need help, please contact GreensBrowns support.",
+    );
+  }
+
+  if (choice === "accept_quote") {
+    const result = await acceptQuoteAndSendPaymentLink(supabase, pickup.id);
+    if (result.ok) return { kind: "none" }; // bwg_payment_link carries the confirmation
+    if (result.reason === "not_awaiting_acceptance") {
+      return text("This quote has already been answered.");
+    }
+    return text(
+      "Sorry, we couldn't create your payment link just now. Please tap Accept Quote again in a few minutes.",
+    );
+  }
+
+  // Reject: close the quote first (guarded), then cancel the pickup.
+  const { data: rejected } = await supabase
+    .from("payments")
+    .update({ status: "quote_rejected" })
+    .eq("pickup_id", pickup.id)
+    .eq("status", "quote_sent")
+    .select("id");
+  if (!rejected?.length) {
+    return text("This quote has already been answered.");
+  }
+
+  const { data: cancelled, error } = await supabase
+    .from("pickups")
+    .update({ status: "cancelled" })
+    .eq("id", pickup.id)
+    .eq("status", "requested")
+    .select("id");
+
+  if (error || !cancelled?.length) {
+    console.error("[WhatsApp] quote reject: pickup cancel failed", { pickupId: pickup.id, error });
+    return text(
+      "Your quote was declined, but we couldn't cancel the pickup automatically. Our team will contact you.",
+    );
+  }
+
+  await supabase.from("pickup_events").insert({
+    pickup_id: pickup.id,
+    status: "cancelled",
+    changed_by: SYSTEM_GUEST_PROFILE_ID || null,
+    notes: "Guest rejected the quote via WhatsApp — pickup cancelled",
   });
 
   // Confirmation is the approved bwg_pickup_cancelled template.

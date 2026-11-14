@@ -1,20 +1,16 @@
 import { NextRequest, NextResponse } from "next/server";
 import { verifyAdmin } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
-import {
-  createPaymentLink,
-  cancelPaymentLink,
-  isRazorpayConfigured,
-  razorpayCredentialDiagnostics,
-} from "@/lib/razorpay";
-import { sendBwgPaymentLinkWhatsApp } from "@/lib/whatsapp/notifications";
+import { cancelPaymentLink, isRazorpayConfigured } from "@/lib/razorpay";
+import { sendBwgQuoteReadyWhatsApp } from "@/lib/whatsapp/notifications";
 
 /**
- * Admin action: send (or resend) a Razorpay payment link for a one-off pickup.
+ * Admin action: send (or resend) the quote for a one-off pickup (UAT-5).
  *
- * The pickup stays 'requested' the whole time; only payments.status moves
- * (awaiting_quote/failed/quoted -> quoted). On resend, the previous Razorpay
- * link is cancelled first so two payable links never coexist.
+ * Sends bwg_quote_ready with Accept Quote / Reject Quote buttons and sets
+ * payments.status to 'quote_sent'. The Razorpay link (valid 24 hours) is only
+ * created when the guest taps Accept Quote. The pickup stays 'requested' the
+ * whole time. On resend, any previous link is cancelled so it can't be paid.
  */
 export async function POST(req: NextRequest) {
   const { admin, error: authError } = await verifyAdmin();
@@ -108,10 +104,10 @@ export async function POST(req: NextRequest) {
   }
 
   const currentStatus = payment?.status ?? "awaiting_quote";
-  const allowed = ["awaiting_quote", "failed", "quoted"];
+  const allowed = ["awaiting_quote", "quote_sent", "failed", "quoted"];
   if (!allowed.includes(currentStatus)) {
     return NextResponse.json(
-      { error: `Cannot send a link while payment is '${currentStatus}'` },
+      { error: `Cannot send a quote while payment is '${currentStatus}'` },
       { status: 409 },
     );
   }
@@ -127,64 +123,23 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  // Resend: cancel the previous link so it can no longer be paid.
+  // Resend: cancel any previous link so it can no longer be paid.
   if (payment?.razorpay_payment_link_id) {
     await cancelPaymentLink(payment.razorpay_payment_link_id);
   }
 
-  // reference_id must be unique per link; we reconcile via the link id + notes.
-  const referenceId = `oneoff-${pickupId.slice(0, 8)}-${Date.now().toString(36)}`;
-  const appUrl = process.env.NEXT_PUBLIC_APP_URL;
-
-  let link;
-  try {
-    link = await createPaymentLink({
-      amountRs: quoteAmountRs,
-      referenceId,
-      customerName: guest.requester_name ?? "GreensBrowns Customer",
-      customerPhone: guest.phone,
-      description: `GreensBrowns one-off pickup ${pickup.pickup_number ?? pickupId}`,
-      callbackUrl: appUrl ? `${appUrl}/payment-status` : undefined,
-      notes: { pickup_id: pickupId, payment_id: payment?.id ?? "" },
-    });
-  } catch (error) {
-    const diag = razorpayCredentialDiagnostics();
-    console.error("[quote] createPaymentLink failed", error, diag);
-    const statusCode =
-      error && typeof error === "object" && "statusCode" in error
-        ? (error as { statusCode?: number }).statusCode
-        : undefined;
-    if (statusCode === 401) {
-      const hint = diag.likelySwapped
-        ? " It looks like KEY_ID and KEY_SECRET may be swapped in Vercel."
-        : !diag.keyIdLooksValid
-          ? " RAZORPAY_KEY_ID should start with rzp_test_ or rzp_live_."
-          : "";
-      return NextResponse.json(
-        {
-          error: `Razorpay authentication failed.${hint} Use matching Test or Live API keys from Razorpay → Settings → API Keys (not the webhook secret). Redeploy after updating env vars.`,
-          diagnostics: diag,
-        },
-        { status: 502 },
-      );
-    }
-    return NextResponse.json(
-      { error: "Failed to create payment link" },
-      { status: 502 },
-    );
-  }
-
-  // Upsert the payment row to 'quoted' with the new link details.
+  // The quote waits for the guest's Accept Quote / Reject Quote. The payment
+  // link is only created on Accept (see lib/one-off-payment-link.ts).
   const paymentRow = {
     pickup_id: pickupId,
-    status: "quoted",
+    status: "quote_sent",
     quote_amount_rs: quoteAmountRs,
     quoted_at: new Date().toISOString(),
     paid_at: null,
     provider: "razorpay",
-    razorpay_payment_link_id: link.id,
+    razorpay_payment_link_id: null,
     razorpay_payment_id: null,
-    payment_link_url: link.shortUrl,
+    payment_link_url: null,
     failure_reason: null,
   };
 
@@ -195,7 +150,7 @@ export async function POST(req: NextRequest) {
   if (upsertErr) {
     console.error("[quote] payment upsert failed", upsertErr);
     return NextResponse.json(
-      { error: "Failed to record payment" },
+      { error: "Failed to record quote" },
       { status: 500 },
     );
   }
@@ -218,18 +173,20 @@ export async function POST(req: NextRequest) {
     pickup_id: pickupId,
     status: "requested",
     changed_by: user?.id ?? null,
-    notes: `Payment link sent (₹${quoteAmountRs.toLocaleString("en-IN")})`,
+    notes: `Quote sent (₹${quoteAmountRs.toLocaleString("en-IN")}) — waiting for the guest to accept or reject`,
   });
 
-  await sendBwgPaymentLinkWhatsApp(pickupId, {
-    amountRs: quoteAmountRs,
-    shortUrl: link.shortUrl,
-  });
+  const messageId = await sendBwgQuoteReadyWhatsApp(pickupId, quoteAmountRs);
+  if (!messageId) {
+    return NextResponse.json(
+      { error: "Quote saved, but the WhatsApp message failed to send. Try Resend quote." },
+      { status: 502 },
+    );
+  }
 
   return NextResponse.json({
     ok: true,
-    status: "quoted",
+    status: "quote_sent",
     quoteAmountRs,
-    paymentLinkUrl: link.shortUrl,
   });
 }
