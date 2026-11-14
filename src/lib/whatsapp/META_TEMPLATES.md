@@ -6,6 +6,21 @@ Use **Utility** category where applicable. Language: `META_WA_TEMPLATE_LANG` (de
 
 Template names must match `WA_TEMPLATE_NAMES` in `wa-templates.ts`. Button payloads must match `normalizeCollectorWhatsAppChoice` / `normalizeFarmerWhatsAppChoice` in the same file.
 
+## Changes in the November 2026 UAT release (branch `fix-feedback-nov14`)
+
+Create or edit these in WhatsApp Manager before deploying the release. Meta reviews new and edited templates, usually within minutes (up to 24h).
+
+| Template | Action | Why |
+|----------|--------|-----|
+| `collector_pickup_first_reminder` | **Create** (Utility, no buttons) — see section 2 | Replaces the 24-hour reminder (UAT-2) |
+| `bwg_quote_ready` | **Create** (Utility, 2 quick-reply buttons) — see section 25 | Guest accepts or rejects a quote before getting a payment link (UAT-5) |
+| `bwg_payment_link` | **Edit** the body — see section 24 | Now sent after Accept Quote, and the link lasts 24 hours (UAT-5) |
+| `collector_pickup_reminder_24h` | **Delete** after the release is live | No longer sent (UAT-2) |
+| `collector_pickup_reminder_1h` | No change | Still carries Enroute and Breakdown |
+| `bwg_pickup_cancelled_` | No change | Now also sent when a guest taps Reject Quote |
+
+After the release the app uses 25 templates: 24 existing (minus the deleted 24-hour reminder) plus the 2 new ones.
+
 ---
 
 ## Meta templates for each message
@@ -13,8 +28,8 @@ Template names must match `WA_TEMPLATE_NAMES` in `wa-templates.ts`. Button paylo
 | # | Meta template name | Recipient | When sent | Buttons | Source (`templates.ts`) |
 |---|-------------------|-----------|-----------|---------|-------------------------|
 | 1 | `collector_job_assigned` | Collector | Job confirmed / reassigned | **Accepted** | `jobAssignedMessage` |
-| 2 | `collector_pickup_reminder_24h` | Collector | 24h before pickup slot | None | `pickupReminder24hMessage` |
-| 3 | `collector_pickup_reminder_1h` | Collector | 1h before pickup slot | **Enroute** · **Breakdown** | `pickupReminder1hMessage` |
+| 2 | `collector_pickup_first_reminder` | Collector | 18h before the slot (12h for evening), or straight away for an urgent job | None | *(wa-templates only)* |
+| 3 | `collector_pickup_reminder_1h` | Collector | 1h before pickup slot, or straight away if the job is created less than 1h before | **Enroute** · **Breakdown** | `pickupReminder1hMessage` |
 | 4 | `admin_driver_not_accepted` | Admin | Collector did not accept within 120 min | None | *(wa-templates only)* |
 | 5 | `admin_vehicle_breakdown` | Admin | Collector reports vehicle breakdown | None | `ADMIN_VEHICLE_BREAKDOWN_MESSAGE` |
 | 6 | `bwg_vehicle_breakdown` | BWG | Collector reports vehicle breakdown | None | `bwgVehicleBreakdownMessage` |
@@ -35,7 +50,8 @@ Template names must match `WA_TEMPLATE_NAMES` in `wa-templates.ts`. Button paylo
 | 21 | `bwg_account_suspended` | BWG | 3rd no-show — account suspended | None | *(wa-templates only)* |
 | 22 | `admin_bwg_no_show` | Admin | Collector reports BWG Unavailable (no-show) | None | *(wa-templates only)* |
 | 23 | `admin_driver_no_show` | Admin | Driver accepted but never arrived by slot deadline | None | *(wa-templates only)* |
-| 24 | `bwg_payment_link` | BWG (guest) | Admin sends/resends a one-off pickup quote | None | *(wa-templates only)* |
+| 24 | `bwg_payment_link` | BWG (guest) | Guest taps **Accept Quote** | None | *(wa-templates only)* |
+| 25 | `bwg_quote_ready` | BWG (guest) | Admin sends/resends a one-off pickup quote | **Accept Quote** · **Reject Quote** | *(wa-templates only)* |
 
 **Not Meta templates:** Collector mid-flow buttons (Enroute → Arrived → Full/Partial → In Transit → Arrived) are **session interactive messages** sent via API within the 24h window. Prompt text: `COLLECTOR_ACTION_PROMPT` in `templates.ts`.
 
@@ -60,7 +76,8 @@ BWG → "hi" / "pickup"
 New Pickup (wa_new_pickup)
   1. [Session] Org confirm — org name(s) as buttons (≤3) or list (>3) → wa_org:<id>
        (aborts if org is suspended or has no prepaid credits)
-  2. [Session] "Send the pickup date in DD/MM/YYYY" (must be ≥ 2 days out, IST)
+  2. [Session list] next 10 bookable dates, e.g. "Monday, 17 Nov" → wa_date:<YYYY-MM-DD>
+       (starts 2 days out, IST; typing DD/MM/YYYY still works)
   3. [Session buttons] "Date set…" Morning · Afternoon · Evening → wa_slot:<slot>
   4. [Session] "Send 2 photos of the waste" (collected one at a time → pickup-photos bucket)
   5. [Session] "Send any notes, or reply 'No' to skip"
@@ -82,6 +99,7 @@ Pickup Status (wa_pickup_status)
 | New Pickup | `wa_new_pickup` | start new-pickup flow |
 | Pickup Status | `wa_pickup_status` | start status lookup |
 | Org choice | `wa_org:<orgId>` | `choose_org` |
+| Date row | `wa_date:<YYYY-MM-DD>` | `await_date` |
 | Morning / Afternoon / Evening | `wa_slot:morning` / `:afternoon` / `:evening` | `await_slot` |
 | Pickup row | `wa_pk:<pickupId>` | `choose_pickup` |
 
@@ -115,7 +133,8 @@ Non-registered → "pickup" (opt-in keyword required to start)
      3. [Session] "Full pickup address?"
      4. [Session] "Share the pickup location" (WhatsApp Location button → lat/lng)
      5. [Session] "GSTIN, or reply 'No' to skip" (validated; 'no' skips)
-     6. [Session] "Pickup date DD/MM/YYYY" (must be ≥ 2 days out, IST)
+     6. [Session list] next 10 bookable dates, e.g. "Monday, 17 Nov" → wa_date:<YYYY-MM-DD>
+        (starts 2 days out, IST; typing DD/MM/YYYY still works)
      7. [Session buttons] Morning · Afternoon · Evening → wa_slot:<slot>
      8. [Session] "Send 2 photos of the waste" (collected → pickup-photos bucket under guest/)
      9. Creates pickup (status=requested, is_one_off=true, system guest org +
@@ -135,10 +154,14 @@ details live in the `payments` table (one row per pickup), NOT on the pickup.
 Only `pickup_lat`/`pickup_lng` are snapshotted on the pickup (for routing).
 ```
 
-**Admin side (webapp `Pickups` page → One-Off Requests tab):** verify/quote/QR/
-Razorpay payment is a later phase. Until then an interim **"Verify (skip
-payment)"** action moves a one-off request into the normal job pipeline (it uses
-the captured `pickup_lat`/`pickup_lng` for routing). Payment status is read from
+**Admin side (webapp `Pickups` page → One-Off Requests tab):** the **Send quote**
+dialog shows the guest's address and map link, lists the active processors
+nearest first with their road distance, and suggests a price for the selected
+processor (cheapest vehicle type that can carry the volume: base fare + rate per
+km × distance). The admin can change the amount, then sends `bwg_quote_ready`.
+The selected processor is saved on the pickup (`farmer_id`). An interim
+**"Verify (skip payment)"** action still moves a one-off request into the normal
+job pipeline (it uses the captured `pickup_lat`/`pickup_lng` for routing). Payment status is read from
 the `payments` table. Admins can block/unblock phone numbers from the **Blocked
 Phones** tab.
 
@@ -149,7 +172,9 @@ Phones** tab.
 | Use saved details | `guest_reuse` | `confirm_returning` |
 | Start fresh | `guest_fresh` | `confirm_returning` |
 | Morning / Afternoon / Evening | `wa_slot:morning` / `:afternoon` / `:evening` | `await_slot` |
+| Date row | `wa_date:<YYYY-MM-DD>` | `await_date` |
 | Cancel (one-off template) | `cancel_pickup` | guest cancel (only while `requested`) |
+| Accept Quote / Reject Quote (`bwg_quote_ready`) | `accept_quote` / `reject_quote` | guest quote response (only while `quote_sent`) |
 
 ---
 
@@ -160,11 +185,11 @@ Phones** tab.
          └─[Meta] bwg_pickup_cancelled_ (on cancel while requested)
 
 [Meta] collector_job_assigned     Accepted → driver_accepted
-         └─[Session] Enroute → enroute · Breakdown → breakdown
+         └─[Session text] "Accepted. You will get a reminder with the job details before pickup." (no buttons)
 
 [Meta] bwg_pickup_scheduled (job assigned)
 
-[Meta] collector_pickup_reminder_24h   (no buttons)
+[Meta] collector_pickup_first_reminder (no buttons; 18h before, 12h for evening, or straight away for urgent jobs)
 
 [Meta] collector_pickup_reminder_1h    Enroute → enroute · Breakdown → breakdown
          └─[Session] Arrived → arrived_bwg · Breakdown → breakdown
@@ -208,19 +233,20 @@ Phones** tab.
 |----------|--------------|---------|
 | `bwg_pickup_requested` | **Cancel** | `cancel_pickup` |
 | `collector_job_assigned` | **Accepted** | `driver_accepted` |
-| `collector_pickup_reminder_24h` | *(none)* | — |
+| `collector_pickup_first_reminder` | *(none)* | — |
 | `collector_pickup_reminder_1h` | **Enroute** · **Breakdown** | `enroute` · `breakdown` |
 | `farmer_delivery_confirm` | **Accepted** | `processor_accepted` |
+| `bwg_quote_ready` | **Accept Quote** · **Reject Quote** | `accept_quote` · `reject_quote` |
 
 **Breakdown** is only accepted when pickup status is `driver_accepted` or `enroute` (not from `assigned`). If the collector taps Breakdown before accepting, they are prompted to accept first.
 
-**Do not add to Meta:** Picked Up, In Transit, Delivered, Reject / Mixed waste / Capacity / Other. **No Enroute button on `collector_pickup_reminder_24h`.**
+**Do not add to Meta:** Picked Up, In Transit, Delivered, Reject / Mixed waste / Capacity / Other. **No buttons on `collector_pickup_first_reminder`.**
 
 ### Session buttons (app — not Meta templates)
 
 | After status | Button label(s) | Payload(s) |
 |--------------|-----------------|------------|
-| `driver_accepted` | Enroute · Breakdown | `enroute` · `breakdown` |
+| `driver_accepted` | *(none in the acceptance reply — Enroute and Breakdown arrive on the 1h reminder; if the driver messages again, Enroute · Breakdown are shown)* | `enroute` · `breakdown` |
 | `enroute` | Arrived · Breakdown | `arrived_bwg` · `breakdown` |
 | `arrived_bwg` | Full Pickup · Partial Pickup · BWG Unavailable | `full_pickup` · `partial_pickup` · `bwg_unavailable` |
 | `full_pickup` or `partial_pickup` | In Transit | `in_transit` |
@@ -293,45 +319,54 @@ Location: {googleMapsLink}
 
 ---
 
-## 2. `collector_pickup_reminder_24h` (Collector)
+## 2. `collector_pickup_first_reminder` (Collector)
 
-**When sent:** 24 hours before scheduled pickup slot.
+**Status:** NEW — create in WhatsApp Manager. Replaces `collector_pickup_reminder_24h` (delete that one after release).
 
-**Buttons:** None
+**Category:** Utility · **Language:** `en`
 
-**Body variables:** 5
+**When sent:** once per pickup, with the job details, before the 1-hour reminder:
+
+| Time from job creation to slot start | First reminder | 1-hour reminder |
+|---|---|---|
+| More than 18h (12h for the evening slot) | 18h before the slot (12h for evening) | 1h before the slot |
+| Between 1h and 18h (12h for evening) | Straight after `collector_job_assigned` | 1h before the slot |
+| Less than 1h | Not sent | Straight after `collector_job_assigned` |
+
+With slot starts of 06:00, 12:00 and 16:00 IST, the scheduled first reminders go at 12:00 IST (morning) and 18:00 IST (afternoon) the day before, and 04:00 IST on the day (evening).
+
+**Buttons:** None. Enroute and Breakdown come on `collector_pickup_reminder_1h`.
+
+**Body variables:** 6 (same order as `collector_job_assigned`)
 
 ```
-GreensBrowns — Reminder: Pickup tomorrow at {{1}}.
-Time slot: {{2}}
-Location: {{3}}
+GreensBrowns — Pickup reminder.
+Pickup from: {{1}}
+Address: {{2}}
+Date: {{3}}
+Slot: {{4}}
+Location: {{5}}
 
-Job {{4}} | Pickup {{5}}
+Job {{6}}
+You will get the Enroute and Breakdown buttons 1 hour before the slot.
 ```
 
-| Var | Maps to |
-|-----|---------|
-| {{1}} | BWG / organization name |
-| {{2}} | Time slot label |
-| {{3}} | Google Maps link |
-| {{4}} | Job number |
-| {{5}} | Pickup date (DD/MM/YYYY) |
+| Var | Maps to | Sample for Meta review |
+|-----|---------|------------------------|
+| {{1}} | BWG / organization name | Brigade Gardenia |
+| {{2}} | BWG address | 12 MG Road, Bengaluru |
+| {{3}} | Pickup date (DD/MM/YYYY) | 17/11/2026 |
+| {{4}} | Time slot label | Morning (6 AM - 12 PM) |
+| {{5}} | Google Maps link | https://maps.google.com/?q=12.97,77.59 |
+| {{6}} | Job number | JOB-20261117-0001 |
 
 **Footer:** `GreensBrowns waste collection`
-
-**Reference text (`pickupReminder24hMessage`):**
-```
-Reminder: Pickup tomorrow at {orgName}
-Slot: {slot}
-
-Location: {googleMapsLink}
-```
 
 ---
 
 ## 3. `collector_pickup_reminder_1h` (Collector)
 
-**When sent:** 1 hour before scheduled pickup slot.
+**When sent:** 1 hour before the scheduled slot. If a job is created less than 1 hour before its slot, this is sent straight after `collector_job_assigned` (and no first reminder is sent).
 
 | Button | Payload |
 |--------|---------|
@@ -1007,41 +1042,89 @@ Sent to all admin profiles with a phone number.
 
 ## 24. `bwg_payment_link` (BWG guest — one-off pickups)
 
-**When sent:** Admin reviews a one-off (guest) pickup request and taps **Send payment link** (or **Resend** after a failed/expired link). A Razorpay payment link is created and its short URL is sent to the requestor. The pickup stays `requested` until payment succeeds.
+**Status:** CHANGED — edit the body of the existing approved template (same name, same 3 variables). Editing sends it back to Meta review.
+
+**When sent:** the guest taps **Accept Quote** on `bwg_quote_ready`. The app creates a Razorpay payment link that **expires after 24 hours** and sends its short URL. The pickup stays `requested` until payment succeeds.
 
 **Buttons:** None (the URL is in the body; the guest taps it to open the hosted Razorpay page).
 
 **Body variables:** 3
 
 ```
-GreensBrowns — your one-off pickup quote is ready.
+GreensBrowns — thank you for accepting the quote.
 Pickup: {{1}}
 Amount payable: {{2}}
 
 Pay securely here: {{3}}
 
-Your pickup is confirmed automatically once payment is received.
+This link is valid for 24 hours. Your pickup is confirmed automatically once payment is received.
 ```
 
-| Var | Maps to |
-|-----|---------|
-| {{1}} | Pickup number |
-| {{2}} | Amount (e.g. ₹1,500) |
-| {{3}} | Razorpay payment link short URL |
+| Var | Maps to | Sample for Meta review |
+|-----|---------|------------------------|
+| {{1}} | Pickup number | GB-20261117-0001 |
+| {{2}} | Amount (e.g. ₹1,500) | ₹1,500 |
+| {{3}} | Razorpay payment link short URL | https://rzp.io/l/abc123 |
 
-Sent to the guest's phone (resolved from `guest_requests.phone`). Reused for both first-send and resend.
+**Previous body (before this release):** "GreensBrowns — your one-off pickup quote is ready. … Pay securely here: {{3}} …". The variables did not change, so the old approved version keeps working until the edit is approved.
 
-**Payment lifecycle (`payments.status`):** `awaiting_quote → quoted → paid | failed | refunded`.
-- **Send/Resend** (admin, `POST /api/admin/pickups/quote`): cancels any previous Razorpay link, creates a new one (unique `reference_id`), sets `payments.status='quoted'`, sends this template. Pickup stays `requested`.
+Sent to the guest's phone (resolved from `guest_requests.phone`).
+
+**Payment lifecycle (`payments.status`):** `awaiting_quote → quote_sent → quoted → paid | failed | refunded`, or `quote_sent → quote_rejected` (pickup cancelled).
+- **Send/Resend quote** (admin, `POST /api/admin/pickups/quote`): cancels any previous Razorpay link, saves the amount and processor, sets `payments.status='quote_sent'`, sends `bwg_quote_ready`. Pickup stays `requested`.
+- **Accept Quote** (guest button, payload `accept_quote`): guarded update `quote_sent → quoted`, creates the Razorpay link with `expire_by` = now + 24h (unique `reference_id`), sends this template.
+- **Reject Quote** (guest button, payload `reject_quote`): guarded update `quote_sent → quote_rejected`, pickup `requested → cancelled`, sends `bwg_pickup_cancelled_`, records a pickup event so admins see it on the Pickups page.
 - **Paid** (`POST /api/webhooks/razorpay`, event `payment_link.paid`): guarded update `quoted → paid`, then pickup `requested → verified`. Idempotent (only a `quoted` row transitions).
-- **Failed / expired / cancelled** (webhook): `quoted → failed`; pickup untouched; admin can resend.
+- **Failed / expired / cancelled** (webhook): `quoted → failed`; pickup untouched; admin can resend the quote.
 - `refunded` is a reserved status value; the refund flow is not built yet.
 
 Razorpay webhook URL to register: `https://<domain>/api/webhooks/razorpay`. Env: `RAZORPAY_KEY_ID`, `RAZORPAY_KEY_SECRET`, `RAZORPAY_WEBHOOK_SECRET`.
 
 ---
 
+## 25. `bwg_quote_ready` (BWG guest — one-off pickups)
+
+**Status:** NEW — create in WhatsApp Manager.
+
+**Category:** Utility · **Language:** `en`
+
+**When sent:** admin picks a processor and sends (or resends) the quote from the One-Off Requests tab. No payment link yet.
+
+| Button (Quick reply) | Payload |
+|----------------------|---------|
+| **Accept Quote** | `accept_quote` |
+| **Reject Quote** | `reject_quote` |
+
+Button labels must be exactly `Accept Quote` and `Reject Quote` — the app maps the label text to the payload.
+
+**Body variables:** 4
+
+```
+GreensBrowns — your one-off pickup quote.
+Pickup: {{1}}
+Date: {{2}}
+Slot: {{3}}
+Amount: {{4}}
+
+Tap Accept Quote to get a payment link, or Reject Quote to cancel this pickup.
+```
+
+| Var | Maps to | Sample for Meta review |
+|-----|---------|------------------------|
+| {{1}} | Pickup number | GB-20261117-0001 |
+| {{2}} | Pickup date (DD/MM/YYYY) | 19/11/2026 |
+| {{3}} | Time slot label | Morning (6 AM - 12 PM) |
+| {{4}} | Quote amount | ₹1,500 |
+
+**Footer:** `GreensBrowns waste collection`
+
+**Accept Quote** → `bwg_payment_link` (link valid 24 hours). **Reject Quote** → pickup cancelled and `bwg_pickup_cancelled_` sent. A button tapped after the quote was replaced or already answered gets a short session reply and changes nothing.
+
+---
+
 ## Deprecated
+
+- **`collector_pickup_reminder_24h`** — replaced by `collector_pickup_first_reminder` in the November 2026 release. Delete from WhatsApp Manager once the release is live.
 
 - **`farmer_waste_processed`** — removed. Do not create in new Meta account.
 
@@ -1049,11 +1132,11 @@ Razorpay webhook URL to register: `https://<domain>/api/webhooks/razorpay`. Env:
 
 ## New Meta Business Suite setup checklist
 
-1. Create all **24** templates above with exact names and variable counts.
-2. Add buttons only on: `bwg_pickup_requested`, `collector_job_assigned`, `collector_pickup_reminder_1h`, `farmer_delivery_confirm`. The 1h reminder has two buttons: Enroute and Breakdown.
+1. Create all current templates above (sections 1–25, **25** in total) with exact names and variable counts.
+2. Add buttons only on: `bwg_pickup_requested`, `collector_job_assigned`, `collector_pickup_reminder_1h`, `farmer_delivery_confirm`, `bwg_quote_ready`. The 1h reminder has two buttons: Enroute and Breakdown. `bwg_quote_ready` has two: Accept Quote and Reject Quote.
 3. Set `META_WA_TEMPLATE_LANG` and WhatsApp API credentials in app environment.
 4. Deploy app code.
-5. Run Supabase migrations `00041`–`00049` if not already applied. (`00046` adds the `bwg_unavailable` status; `00047` adds org `no_show_count` / `is_active` and suspended-org guards; `00048` adds the `driver_no_show` status; `00049` adds `drivers.no_show_count`.)
+5. Run Supabase migrations `00041`–`00058` if not already applied. (`00046` adds the `bwg_unavailable` status; `00047` adds org `no_show_count` / `is_active` and suspended-org guards; `00048` adds the `driver_no_show` status; `00049` adds `drivers.no_show_count`.)
 6. Send a test message for each template via `/api/test/whatsapp-flow` or a staging pickup.
 
 **Session BWG Unavailable button:** `BWG Unavailable` appears alongside Full Pickup / Partial Pickup after `arrived_bwg`. It is a session interactive button (not a Meta template), payload `bwg_unavailable`.
