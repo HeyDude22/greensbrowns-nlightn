@@ -1,4 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { isWithinJobWindow, jobWindowEndIst, todayIst } from "@/lib/ist-date";
+import { formatDateDDMMYYYY } from "@/lib/utils";
 
 export async function createJobFromSuggestion(
   supabase: SupabaseClient,
@@ -21,6 +23,24 @@ export async function createJobFromSuggestion(
   if (!user) return { error: "Not authenticated" };
 
   const { scheduledDate, vehicleId, driverId, farmerId, pickupIds, notes, status = "pending", totalCostRs, estimatedTrips, estimatedDistanceKm } = params;
+
+  // Jobs can only be created for pickups within the next 48 hours (by date).
+  const today = todayIst();
+  const windowEnd = jobWindowEndIst();
+  if (scheduledDate < today || !isWithinJobWindow(scheduledDate)) {
+    return { error: `Job date must be between ${formatDateDDMMYYYY(today)} and ${formatDateDDMMYYYY(windowEnd)} (within 48 hours)` };
+  }
+  const { data: pickupDates, error: pickupDatesErr } = await supabase
+    .from("pickups")
+    .select("pickup_number, scheduled_date")
+    .in("id", pickupIds);
+  if (pickupDatesErr) return { error: "Failed to check pickup dates" };
+  const tooFar = (pickupDates ?? []).filter((p) => !isWithinJobWindow(p.scheduled_date));
+  if (tooFar.length) {
+    return {
+      error: `A job can only be created within 48 hours of the pickup date. Too far ahead: ${tooFar.map((p) => p.pickup_number).join(", ")}`,
+    };
+  }
 
   // Generate job number: JOB-YYYYMMDD-XXXX
   const dateStr = scheduledDate.replace(/-/g, "");

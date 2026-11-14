@@ -9,9 +9,11 @@ import {
   sendTemplateBwgPickupPartial,
   sendTemplateBwgPickupRequested,
   sendTemplateBwgPaymentLink,
+  sendTemplateBwgQuoteReady,
   sendTemplateBwgPickupScheduled,
   sendTemplateCollectorJobAssigned,
-  sendTemplateCollectorPickupReminder,
+  sendTemplateCollectorPickupFirstReminder,
+  sendTemplateCollectorPickupReminder1h,
   sendTemplateFarmerDeliveryIncoming,
   sendTemplateAdminPickupPartial,
   sendTemplateAdminVehicleBreakdown,
@@ -24,6 +26,7 @@ import {
 } from "./wa-templates";
 import { getPickupWhatsAppContext } from "./pickup-context";
 import { formatDateDDMMYYYY } from "@/lib/utils";
+import { SLOT_START_HOUR_IST, addDaysIso, slotStartUtc, todayIst } from "@/lib/ist-date";
 
 const supabase = createAdminClient();
 
@@ -93,153 +96,275 @@ export async function sendJobAssignedNotification(pickupId: string) {
   }
 }
 
-export async function sendPickupReminders(type: "24h" | "1h") {
-  const slotStartHours: Record<string, number> = {
-    morning: 6,
-    afternoon: 12,
-    evening: 16,
-  };
+/** Hours before the slot start that the first reminder is due. */
+const FIRST_REMINDER_LEAD_HOURS: Record<string, number> = {
+  morning: 18,
+  afternoon: 18,
+  evening: 12,
+};
 
-  const now = new Date();
-  const targetDate = new Date(now);
+/** Hours after the slot start that the slot ends; no reminders after that. */
+const SLOT_LENGTH_HOURS: Record<string, number> = {
+  morning: 6,
+  afternoon: 4,
+  evening: 4,
+};
 
-  if (type === "24h") {
-    targetDate.setDate(targetDate.getDate() + 1);
+const HOUR_MS = 60 * 60 * 1000;
+
+type ReminderPickup = {
+  id: string;
+  scheduled_date: string;
+  scheduled_slot: string | null;
+  vehicle_id: string | null;
+  pickup_lat: number | null;
+  pickup_lng: number | null;
+  first_reminder_sent_at: string | null;
+  reminder_1h_sent_at: string | null;
+  organizations: { name: string; address: string | null; lat: number | null; lng: number | null } | null;
+  guest_requests: { org_name: string | null; address: string | null } | null;
+};
+
+export type DriverReminderDecision = "none" | "first" | "1h";
+
+/**
+ * Which reminder is due now for one pickup (UAT-2):
+ * - within 1h of the slot start (or after it, until the slot ends): the 1h
+ *   reminder, and the first reminder is skipped if it never went out;
+ * - within 18h (12h for evening) of the slot start: the first reminder;
+ * - otherwise nothing yet.
+ */
+export function decideDriverReminder(
+  p: Pick<ReminderPickup, "scheduled_date" | "scheduled_slot" | "first_reminder_sent_at" | "reminder_1h_sent_at">,
+  now: Date,
+): DriverReminderDecision {
+  const slot = p.scheduled_slot;
+  const start = slotStartUtc(p.scheduled_date, slot);
+  if (!start || !slot) return "none";
+
+  const startMs = start.getTime();
+  const nowMs = now.getTime();
+  const endMs = startMs + (SLOT_LENGTH_HOURS[slot] ?? 4) * HOUR_MS;
+  if (nowMs > endMs) return "none";
+
+  if (nowMs >= startMs - HOUR_MS) {
+    return p.reminder_1h_sent_at ? "none" : "1h";
+  }
+  if (nowMs >= startMs - FIRST_REMINDER_LEAD_HOURS[slot] * HOUR_MS) {
+    return p.first_reminder_sent_at ? "none" : "first";
+  }
+  return "none";
+}
+
+/**
+ * Send every driver reminder that is due. Called by the reminders cron (all
+ * assigned pickups dated today or tomorrow) and straight after a job is
+ * assigned (just those pickups), so urgent jobs get their reminder at once.
+ * Each reminder is recorded on the pickup so it is never sent twice.
+ */
+export async function sendDueDriverReminders(
+  options: { pickupIds?: string[]; now?: Date } = {},
+): Promise<{ first: number; oneHour: number }> {
+  const now = options.now ?? new Date();
+  const today = todayIst(now);
+
+  let query = supabase
+    .from("pickups")
+    .select(
+      "id, scheduled_date, scheduled_slot, vehicle_id, pickup_lat, pickup_lng, first_reminder_sent_at, reminder_1h_sent_at, organizations(name, address, lat, lng), guest_requests(org_name, address)",
+    )
+    .in("status", ["assigned", "driver_accepted"])
+    .or("first_reminder_sent_at.is.null,reminder_1h_sent_at.is.null");
+
+  query = options.pickupIds?.length
+    ? query.in("id", options.pickupIds)
+    : query.gte("scheduled_date", today).lte("scheduled_date", addDaysIso(today, 1));
+
+  const { data, error } = await query;
+  if (error) {
+    console.error("[Driver Reminders] pickup query failed", error);
+    return { first: 0, oneHour: 0 };
   }
 
-  const dateStr = targetDate.toISOString().split("T")[0];
+  const sent = { first: 0, oneHour: 0 };
 
-  const istHour = (now.getUTCHours() + 5 + (now.getUTCMinutes() + 30 >= 60 ? 1 : 0)) % 24;
-  let targetSlot: string | null = null;
+  for (const pickup of (data ?? []) as unknown as ReminderPickup[]) {
+    const decision = decideDriverReminder(pickup, now);
+    if (decision === "none") continue;
 
-  for (const [slot, hour] of Object.entries(slotStartHours)) {
-    if (type === "1h" && istHour === hour - 1) targetSlot = slot;
-    if (type === "24h" && istHour === hour) targetSlot = slot;
+    if (!pickup.vehicle_id) {
+      console.warn("[Driver Reminders] skip: no vehicle", { pickupId: pickup.id });
+      continue;
+    }
+
+    const org = pickup.organizations;
+    const lat = org?.lat ?? pickup.pickup_lat;
+    const lng = org?.lng ?? pickup.pickup_lng;
+    if (lat == null || lng == null) {
+      console.warn("[Driver Reminders] skip: no pickup location", { pickupId: pickup.id });
+      continue;
+    }
+
+    const ctx = await getPickupWhatsAppContext(supabase, pickup.id);
+    if (!ctx) continue;
+
+    const { data: vehicleDrivers } = await supabase
+      .from("vehicle_drivers")
+      .select("drivers(name, phone)")
+      .eq("vehicle_id", pickup.vehicle_id);
+
+    const phones = (vehicleDrivers ?? [])
+      .map((vd) => (vd.drivers as unknown as { phone: string | null } | null)?.phone)
+      .filter((phone): phone is string => !!phone);
+
+    if (!phones.length) {
+      console.warn("[Driver Reminders] skip: no driver phone on vehicle", {
+        pickupId: pickup.id,
+        vehicleId: pickup.vehicle_id,
+      });
+      continue;
+    }
+
+    const guest = pickup.guest_requests;
+    const orgName = guest?.org_name ?? org?.name ?? ctx.bwgName;
+    const address = org?.address ?? guest?.address ?? "—";
+
+    let anySent = false;
+    for (const phone of phones) {
+      const messageId =
+        decision === "first"
+          ? await sendTemplateCollectorPickupFirstReminder(phone, ctx, {
+              orgName,
+              address,
+              date: ctx.pickupDate,
+              slot: pickup.scheduled_slot,
+              lat,
+              lng,
+            })
+          : await sendTemplateCollectorPickupReminder1h(phone, ctx, {
+              orgName,
+              slot: pickup.scheduled_slot,
+              lat,
+              lng,
+            });
+      if (messageId) {
+        anySent = true;
+      } else {
+        console.error(`[Driver Reminders] ${decision} reminder send failed`, {
+          pickupId: pickup.id,
+          phone,
+        });
+      }
+    }
+
+    if (!anySent) continue;
+
+    const stamp = now.toISOString();
+    // A 1h reminder also closes the first reminder, so a late first one never follows it.
+    const update =
+      decision === "first"
+        ? { first_reminder_sent_at: stamp }
+        : {
+            reminder_1h_sent_at: stamp,
+            first_reminder_sent_at: pickup.first_reminder_sent_at ?? stamp,
+          };
+    await supabase.from("pickups").update(update).eq("id", pickup.id);
+
+    if (decision === "first") sent.first += 1;
+    else sent.oneHour += 1;
   }
 
+  return sent;
+}
+
+/** Clear reminder markers so a newly (re)assigned pickup gets its reminders again. */
+export async function resetDriverReminders(pickupIds: string[]): Promise<void> {
+  if (!pickupIds.length) return;
+  const { error } = await supabase
+    .from("pickups")
+    .update({ first_reminder_sent_at: null, reminder_1h_sent_at: null })
+    .in("id", pickupIds);
+  if (error) console.error("[Driver Reminders] reset failed", { pickupIds, error });
+}
+
+/**
+ * Processor heads-up the day before delivery (farmer_delivery_incoming).
+ * Unchanged from the old 24-hour reminder run: sent at 06:00, 12:00 and 16:00
+ * IST for the next day's morning, afternoon and evening slots.
+ */
+export async function sendFarmerDeliveryIncomingReminders(now: Date = new Date()) {
+  const istHour = Math.floor(((now.getUTCHours() * 60 + now.getUTCMinutes() + 330) % 1440) / 60);
+  const targetSlot = Object.entries(SLOT_START_HOUR_IST).find(([, hour]) => hour === istHour)?.[0];
   if (!targetSlot) return;
+
+  const dateStr = addDaysIso(todayIst(now), 1);
 
   const { data: pickups } = await supabase
     .from("pickups")
-    .select(
-      "id, scheduled_date, scheduled_slot, vehicle_id, farmer_id, estimated_weight_kg, organization_id, organizations(name, address, lat, lng)"
-    )
+    .select("id, scheduled_slot, vehicle_id, farmer_id, estimated_weight_kg")
     .eq("scheduled_date", dateStr)
     .eq("scheduled_slot", targetSlot)
     .in("status", ["assigned", "driver_accepted"]);
 
-  if (!pickups?.length) return;
+  for (const pickup of pickups ?? []) {
+    if (!pickup.farmer_id) continue;
 
-  for (const pickup of pickups) {
     const ctx = await getPickupWhatsAppContext(supabase, pickup.id);
     if (!ctx) continue;
 
-    const org = pickup.organizations as unknown as {
-      name: string;
-      address: string;
-      lat: number | null;
-      lng: number | null;
-    };
-    if (!org?.lat || !org?.lng) continue;
+    const { data: farmerProfile, error: profileError } = await supabase
+      .from("profiles")
+      .select("phone")
+      .eq("id", pickup.farmer_id)
+      .single();
 
-    if (pickup.vehicle_id) {
-      const { data: vehicleDrivers } = await supabase
-        .from("vehicle_drivers")
-        .select("driver_id, drivers(name, phone)")
-        .eq("vehicle_id", pickup.vehicle_id);
-
-      for (const vd of vehicleDrivers || []) {
-        const driver = vd.drivers as unknown as { name: string; phone: string | null };
-        if (driver?.phone) {
-          const messageId = await sendTemplateCollectorPickupReminder(
-            driver.phone,
-            type,
-            ctx,
-            {
-              orgName: org.name,
-              slot: pickup.scheduled_slot,
-              lat: org.lat,
-              lng: org.lng,
-            },
-          );
-          if (!messageId) {
-            console.error(`[Collector Reminder ${type}] template send failed`, {
-              pickupId: pickup.id,
-              phone: driver.phone,
-            });
-          }
-        }
-      }
+    if (profileError) {
+      console.error("[Farmer Reminder] profile lookup error", {
+        pickupId: pickup.id,
+        farmerId: pickup.farmer_id,
+        error: profileError.message,
+      });
     }
 
-    if (type === "24h" && pickup.farmer_id) {
-      const { data: farmerProfile, error: profileError } = await supabase
-        .from("profiles")
-        .select("phone")
-        .eq("id", pickup.farmer_id)
-        .single();
+    if (!farmerProfile?.phone) {
+      console.warn("[Farmer Reminder] skip: no farmer phone", {
+        pickupId: pickup.id,
+        farmerId: pickup.farmer_id,
+      });
+      continue;
+    }
+    if (!pickup.vehicle_id) {
+      console.warn("[Farmer Reminder] skip: no vehicle_id", { pickupId: pickup.id });
+      continue;
+    }
 
-      if (profileError) {
-        console.error("[Farmer Reminder 24h] profile lookup error", {
-          pickupId: pickup.id,
-          farmerId: pickup.farmer_id,
-          error: profileError.message,
-        });
-      }
+    const { data: vehicle } = await supabase
+      .from("vehicles")
+      .select("registration_number")
+      .eq("id", pickup.vehicle_id)
+      .single();
 
-      if (!farmerProfile?.phone) {
-        console.warn("[Farmer Reminder 24h] skip: no farmer phone", {
-          pickupId: pickup.id,
-          farmerId: pickup.farmer_id,
-        });
-      } else if (!pickup.vehicle_id) {
-        console.warn("[Farmer Reminder 24h] skip: no vehicle_id", {
-          pickupId: pickup.id,
-        });
-      } else {
-        const { data: vehicle } = await supabase
-          .from("vehicles")
-          .select("registration_number")
-          .eq("id", pickup.vehicle_id)
-          .single();
+    const { data: driverData } = await supabase
+      .from("vehicle_drivers")
+      .select("drivers(name)")
+      .eq("vehicle_id", pickup.vehicle_id)
+      .limit(1)
+      .single();
 
-        const { data: driverData } = await supabase
-          .from("vehicle_drivers")
-          .select("drivers(name)")
-          .eq("vehicle_id", pickup.vehicle_id)
-          .limit(1)
-          .single();
+    const driverName = (driverData?.drivers as unknown as { name: string })?.name ?? "Collector";
 
-        const driverName = (driverData?.drivers as unknown as { name: string })?.name ?? "Collector";
+    const messageId = await sendTemplateFarmerDeliveryIncoming(farmerProfile.phone, ctx, {
+      slot: pickup.scheduled_slot,
+      collectorName: driverName,
+      weightKg: pickup.estimated_weight_kg,
+      regNumber: vehicle?.registration_number ?? "N/A",
+    });
 
-        console.log("[Farmer Reminder 24h] sending template", {
-          pickupId: pickup.id,
-          phone: farmerProfile.phone,
-        });
-
-        const messageId = await sendTemplateFarmerDeliveryIncoming(
-          farmerProfile.phone,
-          ctx,
-          {
-            slot: pickup.scheduled_slot,
-            collectorName: driverName,
-            weightKg: pickup.estimated_weight_kg,
-            regNumber: vehicle?.registration_number ?? "N/A",
-          },
-        );
-
-        if (messageId) {
-          console.log("[Farmer Reminder 24h] sent", {
-            pickupId: pickup.id,
-            messageId,
-          });
-        } else {
-          console.error("[Farmer Reminder 24h] send failed", {
-            pickupId: pickup.id,
-            phone: farmerProfile.phone,
-          });
-        }
-      }
+    if (!messageId) {
+      console.error("[Farmer Reminder] send failed", {
+        pickupId: pickup.id,
+        phone: farmerProfile.phone,
+      });
     }
   }
 }
@@ -336,6 +461,37 @@ export async function sendBwgPaymentLinkWhatsApp(
       phone,
     });
   }
+}
+
+/** Sends the one-off quote (Accept Quote / Reject Quote). Returns the message id, or null. */
+export async function sendBwgQuoteReadyWhatsApp(
+  pickupId: string,
+  amountRs: number,
+): Promise<string | null> {
+  const { data: pickup } = await supabase
+    .from("pickups")
+    .select("id, pickup_number, scheduled_date, scheduled_slot")
+    .eq("id", pickupId)
+    .single();
+
+  if (!pickup) return null;
+
+  const phone = await resolveBwgPhone(pickupId);
+  if (!phone) {
+    console.warn(`[BWG WhatsApp] No phone for pickup ${pickupId} (quote)`);
+    return null;
+  }
+
+  const messageId = await sendTemplateBwgQuoteReady(phone, {
+    pickupNumber: pickup.pickup_number ?? pickupId,
+    date: formatDateDDMMYYYY(pickup.scheduled_date),
+    slot: pickup.scheduled_slot,
+    amountRs,
+  });
+  if (!messageId) {
+    console.error("[BWG WhatsApp] quote template failed", { pickupId, phone });
+  }
+  return messageId;
 }
 
 export async function sendBwgPickupCancelledWhatsApp(pickupId: string) {

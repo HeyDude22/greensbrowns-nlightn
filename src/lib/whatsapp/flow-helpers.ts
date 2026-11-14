@@ -1,5 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { downloadMedia } from "./client";
+import type { WhatsAppHandlerReply } from "./types";
 
 /**
  * Helpers shared by the registered-BWG and guest one-off WhatsApp flows:
@@ -71,6 +72,60 @@ export function parseUserDate(input: string): string | null {
     return null;
   }
   return `${y}-${pad(mo)}-${pad(d)}`;
+}
+
+// --- Date picker (UAT-6): the next 10 bookable dates as a WhatsApp list ---
+
+export const DATE_ROW_PREFIX = "wa_date:";
+export const DATE_OPTION_COUNT = 10;
+
+const WEEKDAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+/** "Monday, 17 Nov" for a yyyy-mm-dd date. */
+export function dateOptionTitle(iso: string): string {
+  const d = new Date(`${iso}T00:00:00Z`);
+  return `${WEEKDAYS[d.getUTCDay()]}, ${d.getUTCDate()} ${MONTHS[d.getUTCMonth()]}`;
+}
+
+/** The next DATE_OPTION_COUNT bookable dates, starting 2 days from today (IST). */
+export function bookableDates(): string[] {
+  const first = new Date(`${minPickupDateISO()}T00:00:00Z`);
+  return Array.from({ length: DATE_OPTION_COUNT }, (_, i) => {
+    const d = new Date(first);
+    d.setUTCDate(first.getUTCDate() + i);
+    return `${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())}`;
+  });
+}
+
+/** WhatsApp list of the next 10 bookable dates, labelled with the weekday. */
+export function datePickerReply(message: string): WhatsAppHandlerReply {
+  return {
+    kind: "list",
+    message: `${message}\n\nTap "Choose date" and pick one. You can also type a date as DD/MM/YYYY.`,
+    button: "Choose date",
+    sections: [
+      {
+        title: "Pickup date",
+        rows: bookableDates().map((iso) => {
+          const [y, m, d] = iso.split("-");
+          return {
+            id: `${DATE_ROW_PREFIX}${iso}`,
+            title: dateOptionTitle(iso),
+            description: `${d}/${m}/${y}`,
+          };
+        }),
+      },
+    ],
+  };
+}
+
+/** A date picked from the list (wa_date:yyyy-mm-dd) or typed as text, as yyyy-mm-dd. */
+export function parseDateChoice(buttonPayload: string, text: string): string | null {
+  if (buttonPayload.startsWith(DATE_ROW_PREFIX)) {
+    return parseUserDate(buttonPayload.slice(DATE_ROW_PREFIX.length));
+  }
+  return parseUserDate(text);
 }
 
 // --- Waste photo storage ---

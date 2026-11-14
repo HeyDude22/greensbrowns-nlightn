@@ -31,7 +31,8 @@ import {
   type Slot,
   slotTitle,
   minPickupDateISO,
-  parseUserDate,
+  parseDateChoice,
+  datePickerReply,
   storeWastePhoto,
 } from "./flow-helpers";
 
@@ -168,14 +169,8 @@ function orgPickerReply(orgs: OrgRef[]): WhatsAppHandlerReply {
   };
 }
 
-function datePrompt(orgName: string): string {
-  const minLabel = formatDateDDMMYYYY(minPickupDateISO());
-  return [
-    `Great — ${orgName}.`,
-    "",
-    "Please send the pickup date in DD/MM/YYYY format.",
-    `The date must be on or after ${minLabel} (at least 2 days from today).`,
-  ].join("\n");
+function datePrompt(orgName: string): WhatsAppHandlerReply {
+  return datePickerReply(`Great — ${orgName}.\n\nChoose the pickup date:`);
 }
 
 // --- New pickup flow ---
@@ -272,7 +267,7 @@ async function stepChooseOrg(
     step: "await_date",
     data: { ...convo.data, orgId, orgName: orgRow.name, prepaidPackageId },
   });
-  return text(datePrompt(orgRow.name));
+  return datePrompt(orgRow.name);
 }
 
 async function stepAwaitDate(
@@ -281,23 +276,18 @@ async function stepAwaitDate(
   convo: ConversationState,
 ): Promise<WhatsAppHandlerReply> {
   if (input.mediaId) {
-    return text("Please send the pickup date in DD/MM/YYYY format.");
+    return datePickerReply("Please choose the pickup date.");
   }
 
-  const parsed = parseUserDate(input.text);
+  const parsed = parseDateChoice(input.buttonPayload, input.text);
   if (!parsed) {
-    const example = formatDateDDMMYYYY(minPickupDateISO());
-    return text(
-      `I couldn't read that date. Please send it as DD/MM/YYYY, for example ${example}.`,
-    );
+    return datePickerReply("I couldn't read that date.");
   }
 
   const minISO = minPickupDateISO();
   if (parsed < minISO) {
-    return text(
-      `The pickup date must be on or after ${formatDateDDMMYYYY(
-        minISO,
-      )} (at least 2 days from today). Please send another date.`,
+    return datePickerReply(
+      `The pickup date must be on or after ${formatDateDDMMYYYY(minISO)} (at least 2 days from today).`,
     );
   }
 

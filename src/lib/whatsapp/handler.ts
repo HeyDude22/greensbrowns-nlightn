@@ -20,7 +20,11 @@ import {
   notifyVehicleBreakdown,
 } from "./notifications";
 import { handleBwgMessage } from "./bwg-conversation";
-import { handleGuestMessage, handleGuestCancel } from "./guest-conversation";
+import {
+  handleGuestMessage,
+  handleGuestCancel,
+  handleGuestQuoteResponse,
+} from "./guest-conversation";
 import { getConversation } from "./conversation-state";
 import { normalizeBwgWhatsAppChoice } from "./wa-templates";
 import {
@@ -347,9 +351,9 @@ async function handleCollectorAction(
   const updated: PickupRow = { ...pickup, status: action };
 
   if (action === "driver_accepted") {
-    return sessionReplyAfterStatus(
-      "driver_accepted",
-      "Job accepted. Tap Enroute when heading to the BWG, or Breakdown if your vehicle has a problem.",
+    // No buttons here: Enroute and Breakdown arrive on the 1-hour reminder.
+    return text(
+      "Accepted. You will get a reminder with the job details before pickup.",
     );
   }
 
@@ -588,8 +592,13 @@ export async function handleIncomingMessage(
   if (!profile) {
     // Guest taps Cancel on the bwg_pickup_requested template (no conversation
     // is active at that point) — cancel the still-`requested` one-off pickup.
-    if (normalizeBwgWhatsAppChoice(buttonPayload || messageBody) === "cancel_pickup") {
+    const guestChoice = normalizeBwgWhatsAppChoice(buttonPayload || messageBody);
+    if (guestChoice === "cancel_pickup") {
       return handleGuestCancel(phone);
+    }
+    // Guest answers the one-off quote (bwg_quote_ready buttons).
+    if (guestChoice === "accept_quote" || guestChoice === "reject_quote") {
+      return handleGuestQuoteResponse(phone, guestChoice);
     }
 
     const convo = await getConversation(supabase, phone);

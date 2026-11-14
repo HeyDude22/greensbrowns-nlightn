@@ -48,6 +48,7 @@ import {
   type JobSuggestion,
 } from "@/lib/job-optimizer";
 import { createJobFromSuggestion } from "@/lib/create-job";
+import { todayIst } from "@/lib/ist-date";
 import { CLUSTER_COLORS, VEHICLE_TYPE_LABELS } from "@/lib/constants";
 import SuggestionMap from "@/components/shared/suggestion-map-dynamic";
 
@@ -122,6 +123,16 @@ interface PickupWithOrg {
   job_pickups: { jobs: { job_number: string } | null }[] | null;
 }
 
+type QuoteProcessorOption = {
+  id: string;
+  name: string;
+  distanceKm: number;
+  distanceIsEstimate: boolean;
+  suggestedPriceRs: number | null;
+  vehicleLabel: string | null;
+  trips: number | null;
+};
+
 export default function AdminPickupsPage() {
   const supabase = createClient();
   const searchParams = useSearchParams();
@@ -141,6 +152,10 @@ export default function AdminPickupsPage() {
   const [verifying, setVerifying] = useState(false);
   const [quoteAmount, setQuoteAmount] = useState("");
   const [sendingQuote, setSendingQuote] = useState(false);
+  const [quoteProcessors, setQuoteProcessors] = useState<QuoteProcessorOption[]>([]);
+  const [quoteProcessorId, setQuoteProcessorId] = useState("");
+  const [quoteOptionsLoading, setQuoteOptionsLoading] = useState(false);
+  const [quoteOptionsError, setQuoteOptionsError] = useState<string | null>(null);
 
   // Suggest jobs state
   const [viewMode, setViewMode] = useState<"list" | "suggest">("list");
@@ -169,11 +184,8 @@ export default function AdminPickupsPage() {
   const [scheduling, setScheduling] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const cameraInputRef = useRef<HTMLInputElement>(null);
-  const [minDate] = useState(() => {
-    const dayAfterTomorrow = new Date();
-    dayAfterTomorrow.setDate(dayAfterTomorrow.getDate() + 2);
-    return dayAfterTomorrow.toISOString().split("T")[0];
-  });
+  // Admins can book urgent pickups for any date from today (BWGs need 2 days' notice).
+  const [minDate] = useState(() => todayIst());
 
   useRealtime({
     table: "pickups",
@@ -313,6 +325,53 @@ export default function AdminPickupsPage() {
     setCancellingPickupId(null);
   }
 
+  // Quote step (one-off): load processors with distance and suggested price.
+  const quotePickupId =
+    verifyDialogOpen && verifyDialogMode === "one_off" && oneOffDialogStep === "quote"
+      ? verifyingPickup?.id ?? null
+      : null;
+  useEffect(() => {
+    if (!quotePickupId) return;
+    let cancelled = false;
+    setQuoteOptionsLoading(true);
+    setQuoteOptionsError(null);
+    fetch(`/api/admin/pickups/quote-options?pickupId=${encodeURIComponent(quotePickupId)}`)
+      .then(async (res) => {
+        const data = await res.json();
+        if (cancelled) return;
+        if (!res.ok) {
+          setQuoteProcessors([]);
+          setQuoteOptionsError(data.error || "Failed to load processors");
+          return;
+        }
+        const options = (data.processors ?? []) as QuoteProcessorOption[];
+        setQuoteProcessors(options);
+        const preselected =
+          options.find((o) => o.id === data.selectedProcessorId) ?? options[0];
+        if (preselected) {
+          setQuoteProcessorId(preselected.id);
+          setQuoteAmount((prev) =>
+            prev || preselected.suggestedPriceRs == null ? prev : String(preselected.suggestedPriceRs),
+          );
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setQuoteOptionsError("Failed to load processors");
+      })
+      .finally(() => {
+        if (!cancelled) setQuoteOptionsLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [quotePickupId]);
+
+  function selectQuoteProcessor(id: string) {
+    setQuoteProcessorId(id);
+    const option = quoteProcessors.find((o) => o.id === id);
+    if (option?.suggestedPriceRs != null) setQuoteAmount(String(option.suggestedPriceRs));
+  }
+
   function openVerifyDialog(pickup: PickupWithOrg) {
     setVerifyDialogMode("registered");
     setOneOffDialogStep("verify");
@@ -342,6 +401,9 @@ export default function AdminPickupsPage() {
     setOneOffDialogStep("verify");
     setVerifyingPickup(null);
     setQuoteAmount("");
+    setQuoteProcessors([]);
+    setQuoteProcessorId("");
+    setQuoteOptionsError(null);
   }
 
   async function handleVerifyOneOffWeight() {
@@ -445,17 +507,25 @@ export default function AdminPickupsPage() {
       toast.error("Enter a valid amount");
       return;
     }
+    if (!quoteProcessorId) {
+      toast.error("Select a processor");
+      return;
+    }
     setSendingQuote(true);
 
     try {
       const res = await fetch("/api/admin/pickups/quote", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ pickupId: verifyingPickup.id, quoteAmountRs: amount }),
+        body: JSON.stringify({
+          pickupId: verifyingPickup.id,
+          quoteAmountRs: amount,
+          farmerId: quoteProcessorId,
+        }),
       });
       const data = await res.json();
       if (!res.ok) {
-        toast.error(data.error || "Failed to send payment link");
+        toast.error(data.error || "Failed to send quote");
         setSendingQuote(false);
         return;
       }
@@ -465,19 +535,20 @@ export default function AdminPickupsPage() {
           p.id === verifyingPickup.id
             ? {
                 ...p,
+                farmer_id: quoteProcessorId,
                 payments: {
-                  status: "quoted",
+                  status: "quote_sent",
                   quote_amount_rs: amount,
                 },
               }
             : p
         )
       );
-      toast.success("Payment link sent on WhatsApp");
+      toast.success("Quote sent on WhatsApp — waiting for the guest to accept");
       closeVerifyDialog();
     } catch (error) {
       console.error(error);
-      toast.error("Failed to send payment link");
+      toast.error("Failed to send quote");
     } finally {
       setSendingQuote(false);
     }
@@ -724,7 +795,7 @@ export default function AdminPickupsPage() {
       return;
     }
     if (!scheduleDate || scheduleDate < minDate) {
-      toast.error("Pickup date must be at least 2 days from today");
+      toast.error("Pickup date cannot be in the past");
       return;
     }
     if (schedulePhotos.length === 0) {
@@ -1349,7 +1420,7 @@ export default function AdminPickupsPage() {
                               </>
                             )}
                             {pickup.status === "requested" &&
-                              (payStatus === "quoted" || payStatus === "failed") && (
+                              (payStatus === "quote_sent" || payStatus === "quoted" || payStatus === "failed") && (
                               <>
                                 <Button
                                   size="sm"
@@ -1357,7 +1428,7 @@ export default function AdminPickupsPage() {
                                   onClick={() => openOneOffFlow(pickup, "quote")}
                                 >
                                   <Banknote className="mr-1 h-3 w-3" />
-                                  Resend link
+                                  Resend quote
                                 </Button>
                                 <Button
                                   size="sm"
@@ -1451,7 +1522,7 @@ export default function AdminPickupsPage() {
                   onChange={(e) => {
                     const val = e.target.value;
                     if (val && val < minDate) {
-                      toast.error("Pickup date must be at least 2 days from today");
+                      toast.error("Pickup date cannot be in the past");
                       setScheduleDate(minDate);
                     } else {
                       setScheduleDate(val);
@@ -1582,11 +1653,12 @@ export default function AdminPickupsPage() {
           {verifyDialogMode === "one_off" && oneOffDialogStep === "quote" ? (
             <>
               <DialogHeader>
-                <DialogTitle>Send Payment Link</DialogTitle>
+                <DialogTitle>Send Quote</DialogTitle>
                 <DialogDescription>
-                  Enter the quote for {verifyingPickup?.pickup_number}. A Razorpay
-                  payment link is sent to the requestor on WhatsApp. The pickup is
-                  verified automatically once payment succeeds.
+                  Choose the processor and amount for {verifyingPickup?.pickup_number}.
+                  The guest gets the quote on WhatsApp with Accept Quote and Reject
+                  Quote. Accepting sends a payment link valid for 24 hours; rejecting
+                  cancels the pickup. The pickup is verified once payment succeeds.
                 </DialogDescription>
               </DialogHeader>
               <div className="space-y-4 py-2">
@@ -1599,12 +1671,83 @@ export default function AdminPickupsPage() {
                     <> · {verifyingPickup.guest_requests.phone}</>
                   )}
                 </div>
+                <div className="text-sm text-muted-foreground space-y-1">
+                  <div>
+                    Organisation:{" "}
+                    <strong>{verifyingPickup?.guest_requests?.org_name ?? "—"}</strong>
+                  </div>
+                  <div>
+                    Address:{" "}
+                    <strong>{verifyingPickup?.guest_requests?.address ?? "—"}</strong>
+                  </div>
+                  {verifyingPickup?.pickup_lat != null && verifyingPickup?.pickup_lng != null && (
+                    <a
+                      href={`https://maps.google.com/?q=${verifyingPickup.pickup_lat},${verifyingPickup.pickup_lng}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-blue-600 hover:underline"
+                    >
+                      Open shared location in Google Maps
+                    </a>
+                  )}
+                </div>
                 {verifyingPickup?.estimated_weight_kg && (
                   <div className="text-sm text-muted-foreground">
                     Estimated weight:{" "}
                     <strong>{verifyingPickup.estimated_weight_kg} kg</strong>
                   </div>
                 )}
+                <div className="space-y-2">
+                  <Label>Processor</Label>
+                  {quoteOptionsLoading ? (
+                    <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                      <Loader2 className="h-4 w-4 animate-spin" /> Calculating distances…
+                    </div>
+                  ) : quoteOptionsError ? (
+                    <p className="text-sm text-destructive">{quoteOptionsError}</p>
+                  ) : quoteProcessors.length === 0 ? (
+                    <p className="text-sm text-muted-foreground">No active processors with a location.</p>
+                  ) : (
+                    <div className="max-h-56 space-y-1 overflow-y-auto rounded-md border p-1">
+                      {quoteProcessors.map((o) => (
+                        <button
+                          key={o.id}
+                          type="button"
+                          onClick={() => selectQuoteProcessor(o.id)}
+                          className={`flex w-full items-center justify-between rounded px-2 py-1.5 text-left text-sm ${
+                            quoteProcessorId === o.id ? "bg-primary/10 ring-1 ring-primary" : "hover:bg-muted"
+                          }`}
+                        >
+                          <span className="font-medium">{o.name}</span>
+                          <span className="text-right text-xs text-muted-foreground">
+                            {o.distanceIsEstimate ? "~" : ""}
+                            {o.distanceKm} km
+                            {o.suggestedPriceRs != null && (
+                              <> · ₹{o.suggestedPriceRs.toLocaleString("en-IN")}</>
+                            )}
+                          </span>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                  {(() => {
+                    const selected = quoteProcessors.find((o) => o.id === quoteProcessorId);
+                    if (!selected) return null;
+                    return (
+                      <p className="text-xs text-muted-foreground">
+                        {selected.distanceIsEstimate ? "Straight-line estimate (road distance unavailable): " : "Road distance: "}
+                        {selected.distanceKm} km from {selected.name} to the pickup point.
+                        {selected.suggestedPriceRs != null && selected.vehicleLabel && (
+                          <>
+                            {" "}Suggested price ₹{selected.suggestedPriceRs.toLocaleString("en-IN")} with {selected.vehicleLabel}
+                            {selected.trips && selected.trips > 1 ? ` (${selected.trips} trips — no vehicle carries it in one)` : ""}
+                            : base fare + rate per km × distance.
+                          </>
+                        )}
+                      </p>
+                    );
+                  })()}
+                </div>
                 <div className="space-y-2">
                   <Label htmlFor="quoteAmount">Quote Amount (₹)</Label>
                   <Input
@@ -1628,7 +1771,7 @@ export default function AdminPickupsPage() {
                 </Button>
                 <Button onClick={handleSendPaymentLink} disabled={sendingQuote}>
                   <Banknote className="mr-2 h-4 w-4" />
-                  {sendingQuote ? "Sending..." : "Send Link"}
+                  {sendingQuote ? "Sending..." : "Send Quote"}
                 </Button>
               </DialogFooter>
             </>
@@ -1640,7 +1783,7 @@ export default function AdminPickupsPage() {
                   Review and confirm the estimated weight and volume for{" "}
                   {verifyingPickup?.pickup_number}.
                   {verifyDialogMode === "one_off" &&
-                    " After verification you can enter the quote and send a payment link."}
+                    " After verification you can choose the processor and send the quote."}
                 </DialogDescription>
               </DialogHeader>
               <div className="space-y-4 py-2">

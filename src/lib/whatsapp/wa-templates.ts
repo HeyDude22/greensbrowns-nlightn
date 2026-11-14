@@ -21,6 +21,7 @@ export const WA_TEMPLATE_NAMES = {
   bwgPickupScheduled: "bwg_pickup_scheduled",
   bwgPickupRequested: "bwg_pickup_requested",
   bwgPaymentLink: "bwg_payment_link",
+  bwgQuoteReady: "bwg_quote_ready",
   bwgPickupCancelled: "bwg_pickup_cancelled_",
   bwgPickupCollected: "bwg_pickup_collected",
   bwgPickupPartial: "bwg_pickup_partial",
@@ -31,7 +32,7 @@ export const WA_TEMPLATE_NAMES = {
   bwgAccountSuspended: "bwg_account_suspended",
   adminBwgNoShow: "admin_bwg_no_show",
   collectorJobAssigned: "collector_job_assigned",
-  collectorPickupReminder24h: "collector_pickup_reminder_24h",
+  collectorPickupFirstReminder: "collector_pickup_first_reminder",
   collectorPickupReminder1h: "collector_pickup_reminder_1h",
   adminDriverNotAccepted: "admin_driver_not_accepted",
   adminDriverNoShow: "admin_driver_no_show",
@@ -165,6 +166,28 @@ export async function sendTemplateBwgPaymentLink(
       params.pickupNumber,
       `₹${params.amountRs.toLocaleString("en-IN")}`,
       params.shortUrl,
+    ],
+  );
+}
+
+/** One-off quote with Accept Quote / Reject Quote buttons (no payment link yet). */
+export async function sendTemplateBwgQuoteReady(
+  phone: string,
+  params: {
+    pickupNumber: string;
+    date: string;
+    slot: string | null;
+    amountRs: number;
+  },
+): Promise<string | null> {
+  return sendWhatsAppTemplate(
+    phone,
+    WA_TEMPLATE_NAMES.bwgQuoteReady,
+    [
+      params.pickupNumber,
+      params.date,
+      formatWaSlot(params.slot),
+      `₹${params.amountRs.toLocaleString("en-IN")}`,
     ],
   );
 }
@@ -329,9 +352,39 @@ export async function sendTemplateCollectorJobAssigned(
   );
 }
 
-export async function sendTemplateCollectorPickupReminder(
+/** First reminder: job details, no buttons. Same variables as collector_job_assigned. */
+export async function sendTemplateCollectorPickupFirstReminder(
   phone: string,
-  type: "24h" | "1h",
+  ctx: PickupWhatsAppContext,
+  params: {
+    orgName: string;
+    address: string;
+    date: string;
+    slot: string | null;
+    lat: number;
+    lng: number;
+  },
+): Promise<string | null> {
+  return sendWhatsAppTemplate(
+    phone,
+    WA_TEMPLATE_NAMES.collectorPickupFirstReminder,
+    appendWaContext(
+      ctx,
+      [
+        params.orgName,
+        params.address,
+        params.date,
+        formatWaSlot(params.slot),
+        googleMapsLink(params.lat, params.lng),
+      ],
+      { skipDate: true, skipBwg: true },
+    ),
+  );
+}
+
+/** 1-hour reminder with the Enroute and Breakdown buttons. */
+export async function sendTemplateCollectorPickupReminder1h(
+  phone: string,
   ctx: PickupWhatsAppContext,
   params: {
     orgName: string;
@@ -340,14 +393,9 @@ export async function sendTemplateCollectorPickupReminder(
     lng: number;
   },
 ): Promise<string | null> {
-  const name =
-    type === "24h"
-      ? WA_TEMPLATE_NAMES.collectorPickupReminder24h
-      : WA_TEMPLATE_NAMES.collectorPickupReminder1h;
-
   return sendWhatsAppTemplate(
     phone,
-    name,
+    WA_TEMPLATE_NAMES.collectorPickupReminder1h,
     appendWaContext(
       ctx,
       [
@@ -485,6 +533,10 @@ export function normalizeBwgWhatsAppChoice(raw: string): string {
   const textMap: Record<string, string> = {
     cancel: "cancel_pickup",
     cancel_pickup: "cancel_pickup",
+    "accept quote": "accept_quote",
+    accept_quote: "accept_quote",
+    "reject quote": "reject_quote",
+    reject_quote: "reject_quote",
   };
   return textMap[c] ?? c.replace(/\s+/g, "_");
 }
