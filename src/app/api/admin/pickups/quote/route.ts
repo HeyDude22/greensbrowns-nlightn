@@ -31,10 +31,16 @@ export async function POST(req: NextRequest) {
 
   let pickupId: string;
   let quoteAmountRs: number;
+  let farmerId: string;
   try {
-    const body = (await req.json()) as { pickupId?: string; quoteAmountRs?: number };
+    const body = (await req.json()) as {
+      pickupId?: string;
+      quoteAmountRs?: number;
+      farmerId?: string;
+    };
     pickupId = body.pickupId ?? "";
     quoteAmountRs = Number(body.quoteAmountRs);
+    farmerId = body.farmerId ?? "";
   } catch {
     return NextResponse.json({ error: "Invalid request body" }, { status: 400 });
   }
@@ -44,6 +50,19 @@ export async function POST(req: NextRequest) {
       { error: "pickupId and a positive quoteAmountRs are required" },
       { status: 400 },
     );
+  }
+  if (!farmerId) {
+    return NextResponse.json({ error: "Select a processor for this pickup" }, { status: 400 });
+  }
+
+  const { data: processor } = await admin
+    .from("profiles")
+    .select("id")
+    .eq("id", farmerId)
+    .eq("role", "farmer")
+    .maybeSingle();
+  if (!processor) {
+    return NextResponse.json({ error: "Processor not found" }, { status: 400 });
   }
 
   // Load the pickup + its guest contact + current payment row.
@@ -179,6 +198,15 @@ export async function POST(req: NextRequest) {
       { error: "Failed to record payment" },
       { status: 500 },
     );
+  }
+
+  // The processor the quote was priced for is the one the job will deliver to.
+  const { error: farmerErr } = await admin
+    .from("pickups")
+    .update({ farmer_id: farmerId })
+    .eq("id", pickupId);
+  if (farmerErr) {
+    console.error("[quote] failed to save processor", farmerErr);
   }
 
   const ssr = await createClient();
