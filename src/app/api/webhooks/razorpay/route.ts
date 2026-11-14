@@ -81,12 +81,20 @@ export async function POST(req: NextRequest) {
           .eq("id", pickupId)
           .eq("status", "requested");
 
-        await admin.from("pickup_events").insert({
+        // pickup_events.changed_by is NOT NULL, so attribute the entry to the
+        // system guest profile (shown as "WhatsApp Guest System").
+        const { error: eventErr } = await admin.from("pickup_events").insert({
           pickup_id: pickupId,
           status: "verified",
-          changed_by: null,
+          changed_by: process.env.SYSTEM_GUEST_PROFILE_ID || null,
           notes: "Payment received via Razorpay; pickup verified",
         });
+        if (eventErr) {
+          console.error("[Razorpay webhook] timeline entry failed", {
+            pickupId,
+            error: eventErr,
+          });
+        }
 
         return NextResponse.json({ ok: true });
       }
