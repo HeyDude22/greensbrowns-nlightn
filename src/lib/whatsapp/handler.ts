@@ -347,9 +347,9 @@ async function handleCollectorAction(
   const updated: PickupRow = { ...pickup, status: action };
 
   if (action === "driver_accepted") {
-    return sessionReplyAfterStatus(
-      "driver_accepted",
-      "Job accepted. Tap Enroute when heading to the BWG, or Breakdown if your vehicle has a problem.",
+    // No buttons here: Enroute and Breakdown arrive on the 1-hour reminder.
+    return text(
+      "Accepted. You will get a reminder with the job details before pickup.",
     );
   }
 

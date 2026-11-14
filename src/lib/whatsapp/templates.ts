@@ -39,20 +39,6 @@ export function jobAssignedMessage(params: {
   return lines.join("\n");
 }
 
-export function pickupReminder24hMessage(params: {
-  orgName: string;
-  slot: string | null;
-  lat: number;
-  lng: number;
-}): string {
-  return [
-    `Reminder: Pickup tomorrow at ${params.orgName}`,
-    `Slot: ${slotLabel(params.slot)}`,
-    ``,
-    `Location: ${googleMapsLink(params.lat, params.lng)}`,
-  ].join("\n");
-}
-
 export function pickupReminder1hMessage(params: {
   orgName: string;
   slot: string | null;

@@ -68,6 +68,7 @@ import {
   type OptimizerVehicle,
 } from "@/lib/job-optimizer";
 import { createJobFromSuggestion } from "@/lib/create-job";
+import { jobWindowEndIst, todayIst } from "@/lib/ist-date";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 // --- Local types ---
@@ -1278,12 +1279,13 @@ function CreateJobDialog({
         )
       : null;
 
-  // Compute min date (tomorrow) on the client only
+  // Jobs can be created for today (urgent) up to 48 hours ahead, by date (IST).
+  // Computed on the client only.
   const [minDate, setMinDate] = useState("");
+  const [maxDate, setMaxDate] = useState("");
   useEffect(() => {
-    const tomorrow = new Date();
-    tomorrow.setDate(tomorrow.getDate() + 1);
-    setMinDate(tomorrow.toISOString().split("T")[0]);
+    setMinDate(todayIst());
+    setMaxDate(jobWindowEndIst());
   }, []);
 
   // Fetch vehicles & farmers when dialog opens
@@ -1537,8 +1539,12 @@ function CreateJobDialog({
                   type="date"
                   value={scheduledDate}
                   min={minDate}
+                  max={maxDate}
                   onChange={(e) => setScheduledDate(e.target.value)}
                 />
+                <p className="text-xs text-muted-foreground">
+                  Jobs can only be created within 48 hours of the pickup date.
+                </p>
               </div>
 
               <div className="space-y-2">

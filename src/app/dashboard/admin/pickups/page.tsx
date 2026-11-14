@@ -48,6 +48,7 @@ import {
   type JobSuggestion,
 } from "@/lib/job-optimizer";
 import { createJobFromSuggestion } from "@/lib/create-job";
+import { todayIst } from "@/lib/ist-date";
 import { CLUSTER_COLORS, VEHICLE_TYPE_LABELS } from "@/lib/constants";
 import SuggestionMap from "@/components/shared/suggestion-map-dynamic";
 
@@ -169,11 +170,8 @@ export default function AdminPickupsPage() {
   const [scheduling, setScheduling] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const cameraInputRef = useRef<HTMLInputElement>(null);
-  const [minDate] = useState(() => {
-    const dayAfterTomorrow = new Date();
-    dayAfterTomorrow.setDate(dayAfterTomorrow.getDate() + 2);
-    return dayAfterTomorrow.toISOString().split("T")[0];
-  });
+  // Admins can book urgent pickups for any date from today (BWGs need 2 days' notice).
+  const [minDate] = useState(() => todayIst());
 
   useRealtime({
     table: "pickups",
@@ -724,7 +722,7 @@ export default function AdminPickupsPage() {
       return;
     }
     if (!scheduleDate || scheduleDate < minDate) {
-      toast.error("Pickup date must be at least 2 days from today");
+      toast.error("Pickup date cannot be in the past");
       return;
     }
     if (schedulePhotos.length === 0) {
@@ -1451,7 +1449,7 @@ export default function AdminPickupsPage() {
                   onChange={(e) => {
                     const val = e.target.value;
                     if (val && val < minDate) {
-                      toast.error("Pickup date must be at least 2 days from today");
+                      toast.error("Pickup date cannot be in the past");
                       setScheduleDate(minDate);
                     } else {
                       setScheduleDate(val);
