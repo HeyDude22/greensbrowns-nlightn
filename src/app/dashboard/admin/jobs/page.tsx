@@ -69,11 +69,7 @@ import {
 } from "@/lib/job-optimizer";
 import { createJobFromSuggestion } from "@/lib/create-job";
 import { jobWindowEndIst, todayIst } from "@/lib/ist-date";
-import {
-  getPaidOneOffProcessorWarning,
-  PAID_ONE_OFF_TOAST_ID,
-  PAID_ONE_OFF_WARNING_MS,
-} from "@/lib/paid-one-off-processor";
+import { usePaidProcessorDialog } from "@/components/shared/paid-processor-dialog";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 // --- Local types ---
@@ -364,7 +360,6 @@ export default function AdminJobsPage() {
     // Create draft jobs from suggestions
     const localBusyIds = new Set(busyIds);
     const createdJobs: string[] = [];
-    const paidWarnings: string[] = [];
     let skippedCount = 0;
 
     for (const suggestion of result.suggestions) {
@@ -381,12 +376,6 @@ export default function AdminJobsPage() {
 
       const vehicle = availableOfType[0];
       const driver = vehicle.vehicle_drivers[0]?.drivers;
-
-      const paidWarning = await getPaidOneOffProcessorWarning(
-        supabase,
-        suggestion.pickupIds,
-        suggestion.farmerId,
-      );
 
       const jobResult = await createJobFromSuggestion(supabase, {
         scheduledDate,
@@ -408,19 +397,12 @@ export default function AdminJobsPage() {
 
       createdJobs.push(jobResult.jobNumber);
       localBusyIds.add(vehicle.id);
-      if (paidWarning) paidWarnings.push(`${jobResult.jobNumber}: ${paidWarning}`);
     }
 
     toast.dismiss(toastId);
 
     if (createdJobs.length > 0) {
       toast.success(`Created ${createdJobs.length} draft job(s)`);
-      if (paidWarnings.length > 0) {
-        toast.warning(paidWarnings.join(" "), {
-          id: PAID_ONE_OFF_TOAST_ID,
-          duration: PAID_ONE_OFF_WARNING_MS,
-        });
-      }
       if (skippedCount > 0) {
         toast.warning(`${skippedCount} cluster(s) skipped (no available vehicles)`);
       }
@@ -592,6 +574,7 @@ function EditDraftJobDialog({
   onUpdated: () => void;
 }) {
   const supabase = createClient();
+  const { confirmProcessor, paidProcessorDialog } = usePaidProcessorDialog();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -876,26 +859,17 @@ function EditDraftJobDialog({
     onUpdated();
   }
 
-  async function warnPaidOneOffProcessor(farmerId: string) {
-    const warning = await getPaidOneOffProcessorWarning(
-      supabase,
-      jobPickups.map((jp) => jp.pickup_id),
-      farmerId,
-    );
-    if (warning) {
-      toast.warning(warning, { id: PAID_ONE_OFF_TOAST_ID, duration: PAID_ONE_OFF_WARNING_MS });
-    }
-  }
-
   async function handleConfirm() {
-    setConfirming(true);
+    // Ask first if a paid one-off pickup would go to a different processor.
+    const decision = await confirmProcessor(supabase, jobPickups.map((jp) => jp.pickup_id), selectedFarmer);
+    if (decision.action === "cancel") return;
+    if (decision.action === "keep") {
+      setSelectedFarmer(decision.processorId);
+      toast.info(`Processor changed to ${decision.processorName}. Review and try again.`);
+      return;
+    }
 
-    // Check before confirming: confirming overwrites the pickups' processor.
-    const paidWarning = await getPaidOneOffProcessorWarning(
-      supabase,
-      jobPickups.map((jp) => jp.pickup_id),
-      selectedFarmer,
-    );
+    setConfirming(true);
 
     const {
       data: { user },
@@ -948,9 +922,6 @@ function EditDraftJobDialog({
     }
 
     toast.success(`${job.job_number} confirmed — now pending`);
-    if (paidWarning) {
-      toast.warning(paidWarning, { id: PAID_ONE_OFF_TOAST_ID, duration: PAID_ONE_OFF_WARNING_MS });
-    }
     setConfirming(false);
     onUpdated();
   }
@@ -966,6 +937,8 @@ function EditDraftJobDialog({
     hasDriverNotAccepted || hasDriverNoShow || hasBreakdown;
 
   return (
+    <>
+    {paidProcessorDialog}
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
         <DialogHeader>
@@ -1054,10 +1027,7 @@ function EditDraftJobDialog({
               <Label>Farmer (Destination)</Label>
               <Select
                 value={selectedFarmer}
-                onValueChange={(value) => {
-                  setSelectedFarmer(value);
-                  void warnPaidOneOffProcessor(value);
-                }}
+                onValueChange={setSelectedFarmer}
               >
                 <SelectTrigger>
                   <SelectValue placeholder="Select a farmer" />
@@ -1252,6 +1222,7 @@ function EditDraftJobDialog({
         )}
       </DialogContent>
     </Dialog>
+    </>
   );
 }
 
@@ -1267,6 +1238,7 @@ function CreateJobDialog({
   onCreated: () => void;
 }) {
   const supabase = createClient();
+  const { confirmProcessor, paidProcessorDialog } = usePaidProcessorDialog();
   const [step, setStep] = useState(1);
 
   // Step 1 state
@@ -1524,13 +1496,16 @@ function CreateJobDialog({
       return;
     }
 
-    setCreating(true);
+    // Ask first if a paid one-off pickup would go to a different processor.
+    const decision = await confirmProcessor(supabase, Array.from(selectedPickupIds), selectedFarmer);
+    if (decision.action === "cancel") return;
+    if (decision.action === "keep") {
+      setSelectedFarmer(decision.processorId);
+      toast.info(`Processor changed to ${decision.processorName}. Review and try again.`);
+      return;
+    }
 
-    const paidWarning = await getPaidOneOffProcessorWarning(
-      supabase,
-      Array.from(selectedPickupIds),
-      selectedFarmer,
-    );
+    setCreating(true);
 
     const result = await createJobFromSuggestion(supabase, {
       scheduledDate,
@@ -1551,9 +1526,6 @@ function CreateJobDialog({
     }
 
     toast.success(`${result.jobNumber} created with ${selectedPickupIds.size} pickup(s)`);
-    if (paidWarning) {
-      toast.warning(paidWarning, { id: PAID_ONE_OFF_TOAST_ID, duration: PAID_ONE_OFF_WARNING_MS });
-    }
     setCreating(false);
     onOpenChange(false);
     onCreated();
@@ -1569,6 +1541,8 @@ function CreateJobDialog({
   }
 
   return (
+    <>
+    {paidProcessorDialog}
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
         <DialogHeader>
@@ -1845,6 +1819,7 @@ function CreateJobDialog({
         )}
       </DialogContent>
     </Dialog>
+    </>
   );
 }
 
