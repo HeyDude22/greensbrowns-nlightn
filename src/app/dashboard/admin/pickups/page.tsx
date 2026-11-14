@@ -49,6 +49,11 @@ import {
 } from "@/lib/job-optimizer";
 import { createJobFromSuggestion } from "@/lib/create-job";
 import { todayIst } from "@/lib/ist-date";
+import {
+  getPaidOneOffProcessorWarning,
+  PAID_ONE_OFF_TOAST_ID,
+  PAID_ONE_OFF_WARNING_MS,
+} from "@/lib/paid-one-off-processor";
 import { CLUSTER_COLORS, VEHICLE_TYPE_LABELS } from "@/lib/constants";
 import SuggestionMap from "@/components/shared/suggestion-map-dynamic";
 
@@ -699,6 +704,17 @@ export default function AdminPickupsPage() {
   const selectedPickupDetails = allOptimizerPickups.filter((p) => selectedPickupIds.has(p.id));
   const selectedTotalWeight = selectedPickupDetails.reduce((sum, p) => sum + (p.estimated_weight_kg ?? 0), 0);
 
+  async function warnPaidOneOffProcessor(farmerId: string) {
+    const warning = await getPaidOneOffProcessorWarning(
+      supabase,
+      Array.from(selectedPickupIds),
+      farmerId,
+    );
+    if (warning) {
+      toast.warning(warning, { id: PAID_ONE_OFF_TOAST_ID, duration: PAID_ONE_OFF_WARNING_MS });
+    }
+  }
+
   async function handleCreateJobFromSelection() {
     if (selectedPickupIds.size === 0 || !selectedVehicle || !selectedFarmer) {
       toast.error("Select pickups, a vehicle, and a farmer");
@@ -712,6 +728,13 @@ export default function AdminPickupsPage() {
 
     const vehicle = suggestVehicles.find((v) => v.id === selectedVehicle);
     const driver = vehicle?.vehicle_drivers[0]?.drivers;
+
+    // Check before creating: assigning the job overwrites the pickups' processor.
+    const paidWarning = await getPaidOneOffProcessorWarning(
+      supabase,
+      Array.from(selectedPickupIds),
+      selectedFarmer,
+    );
 
     const result = await createJobFromSuggestion(supabase, {
       scheduledDate,
@@ -729,6 +752,9 @@ export default function AdminPickupsPage() {
     }
 
     toast.success(`${result.jobNumber} created with ${selectedPickupIds.size} pickup(s)`);
+    if (paidWarning) {
+      toast.warning(paidWarning, { id: PAID_ONE_OFF_TOAST_ID, duration: PAID_ONE_OFF_WARNING_MS });
+    }
 
     // Remove assigned pickups from optimizer data and re-run suggestions
     const assignedIds = new Set(selectedPickupIds);
@@ -1047,7 +1073,13 @@ export default function AdminPickupsPage() {
                   </div>
                   <div className="space-y-1">
                     <Label className="text-xs">Farmer</Label>
-                    <Select value={selectedFarmer} onValueChange={setSelectedFarmer}>
+                    <Select
+                      value={selectedFarmer}
+                      onValueChange={(value) => {
+                        setSelectedFarmer(value);
+                        void warnPaidOneOffProcessor(value);
+                      }}
+                    >
                       <SelectTrigger className="h-8 text-xs">
                         <SelectValue placeholder="Select farmer" />
                       </SelectTrigger>

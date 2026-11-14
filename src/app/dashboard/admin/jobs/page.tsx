@@ -69,6 +69,11 @@ import {
 } from "@/lib/job-optimizer";
 import { createJobFromSuggestion } from "@/lib/create-job";
 import { jobWindowEndIst, todayIst } from "@/lib/ist-date";
+import {
+  getPaidOneOffProcessorWarning,
+  PAID_ONE_OFF_TOAST_ID,
+  PAID_ONE_OFF_WARNING_MS,
+} from "@/lib/paid-one-off-processor";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 // --- Local types ---
@@ -359,6 +364,7 @@ export default function AdminJobsPage() {
     // Create draft jobs from suggestions
     const localBusyIds = new Set(busyIds);
     const createdJobs: string[] = [];
+    const paidWarnings: string[] = [];
     let skippedCount = 0;
 
     for (const suggestion of result.suggestions) {
@@ -375,6 +381,12 @@ export default function AdminJobsPage() {
 
       const vehicle = availableOfType[0];
       const driver = vehicle.vehicle_drivers[0]?.drivers;
+
+      const paidWarning = await getPaidOneOffProcessorWarning(
+        supabase,
+        suggestion.pickupIds,
+        suggestion.farmerId,
+      );
 
       const jobResult = await createJobFromSuggestion(supabase, {
         scheduledDate,
@@ -396,12 +408,19 @@ export default function AdminJobsPage() {
 
       createdJobs.push(jobResult.jobNumber);
       localBusyIds.add(vehicle.id);
+      if (paidWarning) paidWarnings.push(`${jobResult.jobNumber}: ${paidWarning}`);
     }
 
     toast.dismiss(toastId);
 
     if (createdJobs.length > 0) {
       toast.success(`Created ${createdJobs.length} draft job(s)`);
+      if (paidWarnings.length > 0) {
+        toast.warning(paidWarnings.join(" "), {
+          id: PAID_ONE_OFF_TOAST_ID,
+          duration: PAID_ONE_OFF_WARNING_MS,
+        });
+      }
       if (skippedCount > 0) {
         toast.warning(`${skippedCount} cluster(s) skipped (no available vehicles)`);
       }
@@ -857,8 +876,26 @@ function EditDraftJobDialog({
     onUpdated();
   }
 
+  async function warnPaidOneOffProcessor(farmerId: string) {
+    const warning = await getPaidOneOffProcessorWarning(
+      supabase,
+      jobPickups.map((jp) => jp.pickup_id),
+      farmerId,
+    );
+    if (warning) {
+      toast.warning(warning, { id: PAID_ONE_OFF_TOAST_ID, duration: PAID_ONE_OFF_WARNING_MS });
+    }
+  }
+
   async function handleConfirm() {
     setConfirming(true);
+
+    // Check before confirming: confirming overwrites the pickups' processor.
+    const paidWarning = await getPaidOneOffProcessorWarning(
+      supabase,
+      jobPickups.map((jp) => jp.pickup_id),
+      selectedFarmer,
+    );
 
     const {
       data: { user },
@@ -911,6 +948,9 @@ function EditDraftJobDialog({
     }
 
     toast.success(`${job.job_number} confirmed — now pending`);
+    if (paidWarning) {
+      toast.warning(paidWarning, { id: PAID_ONE_OFF_TOAST_ID, duration: PAID_ONE_OFF_WARNING_MS });
+    }
     setConfirming(false);
     onUpdated();
   }
@@ -1014,7 +1054,10 @@ function EditDraftJobDialog({
               <Label>Farmer (Destination)</Label>
               <Select
                 value={selectedFarmer}
-                onValueChange={setSelectedFarmer}
+                onValueChange={(value) => {
+                  setSelectedFarmer(value);
+                  void warnPaidOneOffProcessor(value);
+                }}
               >
                 <SelectTrigger>
                   <SelectValue placeholder="Select a farmer" />
@@ -1483,6 +1526,12 @@ function CreateJobDialog({
 
     setCreating(true);
 
+    const paidWarning = await getPaidOneOffProcessorWarning(
+      supabase,
+      Array.from(selectedPickupIds),
+      selectedFarmer,
+    );
+
     const result = await createJobFromSuggestion(supabase, {
       scheduledDate,
       vehicleId: selectedVehicle,
@@ -1502,6 +1551,9 @@ function CreateJobDialog({
     }
 
     toast.success(`${result.jobNumber} created with ${selectedPickupIds.size} pickup(s)`);
+    if (paidWarning) {
+      toast.warning(paidWarning, { id: PAID_ONE_OFF_TOAST_ID, duration: PAID_ONE_OFF_WARNING_MS });
+    }
     setCreating(false);
     onOpenChange(false);
     onCreated();
