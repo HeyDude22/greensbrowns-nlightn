@@ -49,6 +49,7 @@ import {
 } from "@/lib/job-optimizer";
 import { createJobFromSuggestion } from "@/lib/create-job";
 import { todayIst } from "@/lib/ist-date";
+import { usePaidProcessorDialog } from "@/components/shared/paid-processor-dialog";
 import { CLUSTER_COLORS, VEHICLE_TYPE_LABELS } from "@/lib/constants";
 import SuggestionMap from "@/components/shared/suggestion-map-dynamic";
 
@@ -152,6 +153,7 @@ export default function AdminPickupsPage() {
   const [verifying, setVerifying] = useState(false);
   const [quoteAmount, setQuoteAmount] = useState("");
   const [sendingQuote, setSendingQuote] = useState(false);
+  const { confirmProcessor, paidProcessorDialog } = usePaidProcessorDialog();
   const [quoteProcessors, setQuoteProcessors] = useState<QuoteProcessorOption[]>([]);
   const [quoteProcessorId, setQuoteProcessorId] = useState("");
   const [quoteOptionsLoading, setQuoteOptionsLoading] = useState(false);
@@ -704,6 +706,16 @@ export default function AdminPickupsPage() {
       toast.error("Select pickups, a vehicle, and a farmer");
       return;
     }
+
+    // Ask first if a paid one-off pickup would go to a different processor.
+    const decision = await confirmProcessor(supabase, Array.from(selectedPickupIds), selectedFarmer);
+    if (decision.action === "cancel") return;
+    if (decision.action === "keep") {
+      setSelectedFarmer(decision.processorId);
+      toast.info(`Processor changed to ${decision.processorName}. Review and try again.`);
+      return;
+    }
+
     setCreatingJob(true);
 
     const tomorrow = new Date();
@@ -1640,6 +1652,8 @@ export default function AdminPickupsPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {paidProcessorDialog}
 
       {/* Verify Pickup Dialog (registered + one-off quote flow) */}
       <Dialog

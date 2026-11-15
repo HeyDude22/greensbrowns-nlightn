@@ -69,6 +69,7 @@ import {
 } from "@/lib/job-optimizer";
 import { createJobFromSuggestion } from "@/lib/create-job";
 import { jobWindowEndIst, todayIst } from "@/lib/ist-date";
+import { usePaidProcessorDialog } from "@/components/shared/paid-processor-dialog";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 // --- Local types ---
@@ -573,6 +574,7 @@ function EditDraftJobDialog({
   onUpdated: () => void;
 }) {
   const supabase = createClient();
+  const { confirmProcessor, paidProcessorDialog } = usePaidProcessorDialog();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -858,6 +860,15 @@ function EditDraftJobDialog({
   }
 
   async function handleConfirm() {
+    // Ask first if a paid one-off pickup would go to a different processor.
+    const decision = await confirmProcessor(supabase, jobPickups.map((jp) => jp.pickup_id), selectedFarmer);
+    if (decision.action === "cancel") return;
+    if (decision.action === "keep") {
+      setSelectedFarmer(decision.processorId);
+      toast.info(`Processor changed to ${decision.processorName}. Review and try again.`);
+      return;
+    }
+
     setConfirming(true);
 
     const {
@@ -926,6 +937,8 @@ function EditDraftJobDialog({
     hasDriverNotAccepted || hasDriverNoShow || hasBreakdown;
 
   return (
+    <>
+    {paidProcessorDialog}
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
         <DialogHeader>
@@ -1209,6 +1222,7 @@ function EditDraftJobDialog({
         )}
       </DialogContent>
     </Dialog>
+    </>
   );
 }
 
@@ -1224,6 +1238,7 @@ function CreateJobDialog({
   onCreated: () => void;
 }) {
   const supabase = createClient();
+  const { confirmProcessor, paidProcessorDialog } = usePaidProcessorDialog();
   const [step, setStep] = useState(1);
 
   // Step 1 state
@@ -1481,6 +1496,15 @@ function CreateJobDialog({
       return;
     }
 
+    // Ask first if a paid one-off pickup would go to a different processor.
+    const decision = await confirmProcessor(supabase, Array.from(selectedPickupIds), selectedFarmer);
+    if (decision.action === "cancel") return;
+    if (decision.action === "keep") {
+      setSelectedFarmer(decision.processorId);
+      toast.info(`Processor changed to ${decision.processorName}. Review and try again.`);
+      return;
+    }
+
     setCreating(true);
 
     const result = await createJobFromSuggestion(supabase, {
@@ -1517,6 +1541,8 @@ function CreateJobDialog({
   }
 
   return (
+    <>
+    {paidProcessorDialog}
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
         <DialogHeader>
@@ -1793,6 +1819,7 @@ function CreateJobDialog({
         )}
       </DialogContent>
     </Dialog>
+    </>
   );
 }
 
